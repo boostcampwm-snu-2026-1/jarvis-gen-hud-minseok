@@ -35,7 +35,8 @@
 │   ├── tasks.md               # 도출 Task + GitHub 셋업 명령
 │   └── 회고록-1주차.md
 ├── deploy/                    # 배포 (compose, Caddy, env)
-├── .claude/skills/jarvis-hud-dev/SKILL.md   # 개발 workflow 스킬
+├── AGENTS.md                  # 코딩 에이전트 기준 문서 (canonical)
+├── CLAUDE.md                  # Claude Code 진입점 (@AGENTS.md 참조)
 └── (앱 소스: web/ — 2주차부터)
 ```
 
@@ -59,5 +60,5 @@
 
 ## 링크
 - 기획서 · Agent Workflow · 회고록 → `docs/` (및 GitHub Wiki)
-- 개발 workflow 스킬 → `.claude/skills/jarvis-hud-dev/SKILL.md`
+- 코딩 에이전트 기준 → `AGENTS.md` (CLAUDE.md가 참조)
 - 상세 설계 배경 → `jarvis_handoff.md`
