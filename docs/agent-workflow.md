@@ -1,8 +1,5 @@
 # Agent 개발 Workflow 초안
 
-> GitHub Wiki "Agent Workflow" 페이지로 관리. 실제 실행용 workflow는 Agent Skill로도 작성한다 → [`.claude/skills/jarvis-hud-dev/SKILL.md`](../.claude/skills/jarvis-hud-dev/SKILL.md).
-> 이 문서는 "내가 에이전트와 어떻게 일할지"의 나만의 흐름·패턴·검증 기준을 정리한 초안이며, 3주간 발전시킨다.
-
 ---
 
 ## 0. 전체 루프 (한 사이클)
