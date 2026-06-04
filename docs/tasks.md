@@ -84,7 +84,7 @@ for L in spike infra feature design core demo; do gh label create "$L" 2>/dev/nu
 
 gh issue create --title "[M0] 음성 스모크 테스트로 STT→LLM→TTS 지연 측정" \
   --label spike \
-  --body "voice_smoke_test.py로 faster-whisper→LLM→ElevenLabs 1회 왕복 + 단계별 지연 측정. localhost와 원격 노트북 둘 다. **Exit:** 합산 지연 숫자 확보, 0.5s까지 거리 파악."
+  --body "음성 스파이크 스크립트로 faster-whisper→LLM→ElevenLabs 1회 왕복 + 단계별 지연 측정. localhost와 원격 노트북 둘 다. **Exit:** 합산 지연 숫자 확보, 0.5s까지 거리 파악."
 
 gh issue create --title "[M0] react-live 샌드박스에 하드코딩 JSX 1개 렌더" \
   --label spike \
