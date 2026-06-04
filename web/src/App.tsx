@@ -8,12 +8,6 @@ import { streamChat } from './lib/hermes';
 import type { ChatMessage, JarvisStatus } from './types';
 import './styles/app.css';
 
-const SYSTEM_PROMPT: ChatMessage = {
-  role: 'system',
-  content:
-    '당신은 엔지니어를 돕는 자비스(J.A.R.V.I.S)입니다. 간결하고 정확하게 한국어로 답하세요.',
-};
-
 type MobileTab = 'chat' | 'hud';
 
 export default function App() {
@@ -26,9 +20,9 @@ export default function App() {
   async function handleSend(text: string) {
     const userMsg: DisplayMessage = { role: 'user', content: text };
 
-    // 요청에 보낼 히스토리: 에러 의사 메시지는 제외하고 순수 대화만.
+    // 프론트는 페르소나/베이스 프롬프트를 붙이지 않는다 — 그건 Hermes 튜닝의 몫.
+    // 여기선 대화 내용만 그대로 전달한다(에러 의사 메시지는 제외).
     const history: ChatMessage[] = [
-      SYSTEM_PROMPT,
       ...messages
         .filter((m) => !m.isError)
         .map(({ role, content }) => ({ role, content })),
