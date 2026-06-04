@@ -10,7 +10,21 @@ export default defineConfig(({ mode }) => {
   const apiKey = env.API_SERVER_KEY || '';
 
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      {
+        // Hermes(aiohttp)는 브라우저 Origin 헤더가 붙은 요청을 403으로 거절한다.
+        // 프록시로 넘기기 전에 /v1 요청의 Origin을 제거(서버↔서버 요청처럼 보이게).
+        // 배포에선 Caddy가 동일 처리해야 한다: reverse_proxy 블록에 `header_up -Origin`.
+        name: 'hermes-strip-origin',
+        configureServer(server) {
+          server.middlewares.use((req, _res, next) => {
+            if (req.url?.startsWith('/v1')) delete req.headers.origin;
+            next();
+          });
+        },
+      },
+    ],
     server: {
       proxy: {
         // dev에서 같은 출처 /v1/* 를 Hermes로 넘기며 Authorization을 프록시 단(서버측)에서 주입.
