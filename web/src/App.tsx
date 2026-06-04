@@ -8,12 +8,6 @@ import { streamChat } from './lib/hermes';
 import type { ChatMessage, JarvisStatus } from './types';
 import './styles/app.css';
 
-const SYSTEM_PROMPT: ChatMessage = {
-  role: 'system',
-  content:
-    '당신은 엔지니어를 돕는 자비스(J.A.R.V.I.S)입니다. 간결하고 정확하게 한국어로 답하세요.',
-};
-
 type MobileTab = 'chat' | 'hud';
 
 export default function App() {
@@ -26,9 +20,9 @@ export default function App() {
   async function handleSend(text: string) {
     const userMsg: DisplayMessage = { role: 'user', content: text };
 
-    // 요청에 보낼 히스토리: 에러 의사 메시지는 제외하고 순수 대화만.
+    // 프론트는 페르소나/베이스 프롬프트를 붙이지 않는다 — 그건 Hermes 튜닝의 몫.
+    // 여기선 대화 내용만 그대로 전달한다(에러 의사 메시지는 제외).
     const history: ChatMessage[] = [
-      SYSTEM_PROMPT,
       ...messages
         .filter((m) => !m.isError)
         .map(({ role, content }) => ({ role, content })),
@@ -130,7 +124,11 @@ export default function App() {
   );
 }
 
-/** 마지막 assistant 메시지에 델타를 이어붙인 새 배열을 반환. */
+/**
+ * 마지막 assistant 메시지에 델타를 이어붙인 새 배열을 반환.
+ * 메시지 맨 앞의 공백·줄바꿈은 버린다(아직 실내용이 없을 때 들어온 델타는 left-trim).
+ * 내부 줄바꿈은 보존한다.
+ */
 function appendToLastAssistant(
   prev: DisplayMessage[],
   delta: string,
@@ -138,7 +136,9 @@ function appendToLastAssistant(
   const next = prev.slice();
   for (let i = next.length - 1; i >= 0; i--) {
     if (next[i].role === 'assistant' && !next[i].isError) {
-      next[i] = { ...next[i], content: next[i].content + delta };
+      const current = next[i].content;
+      const piece = current === '' ? delta.replace(/^\s+/, '') : delta;
+      next[i] = { ...next[i], content: current + piece };
       break;
     }
   }
