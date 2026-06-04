@@ -124,7 +124,11 @@ export default function App() {
   );
 }
 
-/** 마지막 assistant 메시지에 델타를 이어붙인 새 배열을 반환. */
+/**
+ * 마지막 assistant 메시지에 델타를 이어붙인 새 배열을 반환.
+ * 메시지 맨 앞의 공백·줄바꿈은 버린다(아직 실내용이 없을 때 들어온 델타는 left-trim).
+ * 내부 줄바꿈은 보존한다.
+ */
 function appendToLastAssistant(
   prev: DisplayMessage[],
   delta: string,
@@ -132,7 +136,9 @@ function appendToLastAssistant(
   const next = prev.slice();
   for (let i = next.length - 1; i >= 0; i--) {
     if (next[i].role === 'assistant' && !next[i].isError) {
-      next[i] = { ...next[i], content: next[i].content + delta };
+      const current = next[i].content;
+      const piece = current === '' ? delta.replace(/^\s+/, '') : delta;
+      next[i] = { ...next[i], content: current + piece };
       break;
     }
   }
