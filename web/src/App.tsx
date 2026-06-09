@@ -2,15 +2,25 @@ import { useRef, useState } from 'react';
 import { StatusBar } from './components/StatusBar';
 import { ConversationPanel } from './components/ConversationPanel';
 import type { DisplayMessage } from './components/ConversationPanel';
+import { Gallery } from './Gallery';
 import { HudCanvas } from './components/HudCanvas';
 import { InputBar } from './components/InputBar';
 import { streamChat } from './lib/hermes';
 import type { ChatMessage, JarvisStatus } from './types';
 import './styles/app.css';
+import './hud/styles.css';
 
 type MobileTab = 'chat' | 'hud';
 
 export default function App() {
+  if (window.location.pathname === '/gallery') {
+    return <Gallery />;
+  }
+
+  return <ChatApp />;
+}
+
+function ChatApp() {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [status, setStatus] = useState<JarvisStatus>('idle');
   const [streaming, setStreaming] = useState(false);
