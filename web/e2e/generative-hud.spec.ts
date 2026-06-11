@@ -111,10 +111,12 @@ test('uses named Responses conversations without resending transcript', async ({
   await expect(page.getByText(/E: 볼륨이 가장 높습니다/)).toBeVisible();
 
   const chatRequests = requests.filter((request) => !request.instructions);
+  const hudRequests = requests.filter((request) => request.instructions);
   const firstConversation = chatRequests[0].conversation;
   expect(chatRequests[0].input).toBe('디스크 사용량 봐줘');
   expect(chatRequests[0].messages).toBeUndefined();
   expect(typeof firstConversation).toBe('string');
+  expect(hudRequests[0].conversation).toBe(`${firstConversation}-hud`);
 
   await page.reload();
   await revealChatPanel(page);
@@ -135,6 +137,43 @@ test('uses named Responses conversations without resending transcript', async ({
   expect(finalChatRequests[2].input).toBe('방금 뭐 실행했지?');
   expect(finalChatRequests[2].messages).toBeUndefined();
   expect(finalChatRequests[2].conversation).not.toBe(firstConversation);
+});
+
+test('does not leak HUD envelope JSON into the chat panel', async ({ page }) => {
+  await page.route('**/v1/responses', async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    if (String(body.instructions ?? '').includes('J.A.R.V.I.S HUD agent')) {
+      await route.fulfill(
+        responseSse(
+          envelope({ say: 'HUD ready.', design: null, data: {}, jsx: null }),
+        ),
+      );
+      return;
+    }
+    await route.fulfill(
+      responseSse(
+        envelope({
+          say: '의존성은 총 23개입니다.',
+          design: {
+            data_kind: 'breakdown/composition',
+            primitives: ['PieChart'],
+            layout: 'composition',
+            why: 'test envelope',
+          },
+          data: { total: 23 },
+          jsx: '<Panel title="Packages" state="info"><Stat label="Total" value={data.total} state="info" /></Panel>',
+        }),
+      ),
+    );
+  });
+  await page.goto('/');
+
+  await submitCommand(page, '의존성 개수 보여줘');
+  await revealChatPanel(page);
+
+  await expect(page.getByText('의존성은 총 23개입니다.')).toBeVisible();
+  await expect(page.getByText(/"jsx"/)).toHaveCount(0);
+  await expect(page.getByText(/<Panel/)).toHaveCount(0);
 });
 
 test('renders disk usage as a pie-style HUD, not a flat table', async ({ page }) => {

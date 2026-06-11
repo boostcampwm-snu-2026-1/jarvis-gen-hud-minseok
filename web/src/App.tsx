@@ -83,17 +83,28 @@ function ChatApp() {
 
     try {
       let received = false;
+      let assistantBuffer = '';
+      let bufferingEnvelope = false;
       for await (const delta of streamResponse(text, activeConversation, {
         signal: controller.signal,
         onToolEvent: handleToolEvent,
       })) {
         received = true;
-        setMessages((prev) => appendToLastAssistant(prev, delta));
+        assistantBuffer += delta;
+        if (shouldBufferPotentialEnvelope(assistantBuffer, bufferingEnvelope)) {
+          bufferingEnvelope = true;
+        } else {
+          setMessages((prev) => appendToLastAssistant(prev, delta));
+        }
       }
       // 토큰이 하나도 안 오면 빈 말풍선이 남으므로 안내로 채운다.
       if (!received) {
         setMessages((prev) =>
           appendToLastAssistant(prev, '(응답이 비어 있습니다.)'),
+        );
+      } else if (bufferingEnvelope) {
+        setMessages((prev) =>
+          replaceLastAssistant(prev, extractEnvelopeSay(assistantBuffer)),
         );
       }
       setStatus('idle');
@@ -172,7 +183,7 @@ function ChatApp() {
     try {
       const repaired = await repairHudJsx(current, errorMessage, {
         signal: controller.signal,
-        conversation,
+        conversation: hudConversationName(conversation),
         onToolEvent: handleToolEvent,
       });
       if (controller.signal.aborted) return;
@@ -203,7 +214,7 @@ function ChatApp() {
       setHud({ phase: 'generating', data, message: 'HUD 생성 중' });
       const result = await generateHudJsx(task, data, {
         signal: controller.signal,
-        conversation: activeConversation,
+        conversation: hudConversationName(activeConversation),
         onToolEvent: handleToolEvent,
       });
       if (controller.signal.aborted) return;
@@ -344,6 +355,48 @@ function dropEmptyTrailingAssistant(prev: DisplayMessage[]): DisplayMessage[] {
     return prev.slice(0, -1);
   }
   return prev;
+}
+
+function replaceLastAssistant(
+  prev: DisplayMessage[],
+  content: string,
+): DisplayMessage[] {
+  const next = prev.slice();
+  for (let i = next.length - 1; i >= 0; i--) {
+    if (next[i].role === 'assistant' && !next[i].isError) {
+      next[i] = { ...next[i], content };
+      break;
+    }
+  }
+  return next;
+}
+
+function shouldBufferPotentialEnvelope(
+  content: string,
+  alreadyBuffering: boolean,
+): boolean {
+  return alreadyBuffering || content.trimStart().startsWith('{');
+}
+
+function extractEnvelopeSay(content: string): string {
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      'say' in parsed &&
+      typeof parsed.say === 'string'
+    ) {
+      return parsed.say;
+    }
+  } catch {
+    return content;
+  }
+  return content;
+}
+
+function hudConversationName(conversation: string): string {
+  return `${conversation}-hud`;
 }
 
 function loadConversation(): string {
