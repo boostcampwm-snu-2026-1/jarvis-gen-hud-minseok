@@ -83,6 +83,60 @@ test('renders an invented project HUD from agent-supplied data', async ({ page }
   await expect(page.getByText('Working tree has changes')).toBeVisible();
 });
 
+test('uses named Responses conversations without resending transcript', async ({
+  page,
+}) => {
+  const requests: Array<Record<string, unknown>> = [];
+  await page.route('**/v1/responses', async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    requests.push(body);
+    if (String(body.instructions ?? '').includes('J.A.R.V.I.S HUD agent')) {
+      await route.fulfill(
+        responseSse(
+          envelope({ say: 'No HUD needed.', design: null, data: {}, jsx: null }),
+        ),
+      );
+      return;
+    }
+    const input = String(body.input ?? '');
+    const text = input.includes('방금')
+      ? '방금 실행한 도구 결과 기준으로는 E: 볼륨이 제일 찼습니다.'
+      : '디스크 사용량을 확인했습니다. E: 볼륨이 가장 높습니다.';
+    await route.fulfill(responseSse(text));
+  });
+  await page.goto('/');
+
+  await submitCommand(page, '디스크 사용량 봐줘');
+  await revealChatPanel(page);
+  await expect(page.getByText(/E: 볼륨이 가장 높습니다/)).toBeVisible();
+
+  const chatRequests = requests.filter((request) => !request.instructions);
+  const firstConversation = chatRequests[0].conversation;
+  expect(chatRequests[0].input).toBe('디스크 사용량 봐줘');
+  expect(chatRequests[0].messages).toBeUndefined();
+  expect(typeof firstConversation).toBe('string');
+
+  await page.reload();
+  await revealChatPanel(page);
+  await expect(page.getByText(/E: 볼륨이 가장 높습니다/)).toBeVisible();
+  await submitCommand(page, '방금 어느 볼륨이 제일 찼었지?');
+  await revealChatPanel(page);
+  await expect(page.getByText(/E: 볼륨이 제일 찼습니다/)).toBeVisible();
+
+  const resumedChatRequests = requests.filter((request) => !request.instructions);
+  expect(resumedChatRequests[1].input).toBe('방금 어느 볼륨이 제일 찼었지?');
+  expect(resumedChatRequests[1].messages).toBeUndefined();
+  expect(resumedChatRequests[1].conversation).toBe(firstConversation);
+
+  await page.getByRole('button', { name: '새 대화' }).click();
+  await submitCommand(page, '방금 뭐 실행했지?');
+
+  const finalChatRequests = requests.filter((request) => !request.instructions);
+  expect(finalChatRequests[2].input).toBe('방금 뭐 실행했지?');
+  expect(finalChatRequests[2].messages).toBeUndefined();
+  expect(finalChatRequests[2].conversation).not.toBe(firstConversation);
+});
+
 test('renders disk usage as a pie-style HUD, not a flat table', async ({ page }) => {
   await mockHermes(page, [
     envelope({
@@ -240,21 +294,29 @@ async function revealHudPanel(page: Page) {
   }
 }
 
+async function revealChatPanel(page: Page) {
+  const chatTab = page.getByRole('tab', { name: '대화' });
+  if (await chatTab.isVisible()) {
+    await chatTab.click();
+  }
+}
+
 async function mockHermes(page: Page, hudResponses: string[]) {
   let hudIndex = 0;
   await page.route('**/v1/chat/completions', async (route) => {
+    await route.abort();
+  });
+  await page.route('**/v1/responses', async (route) => {
     const body = route.request().postDataJSON() as {
+      input?: string;
+      instructions?: string;
+      conversation?: string;
       messages?: { role: string; content: string }[];
     };
-    const messages = body.messages ?? [];
-    const isHudRequest = messages.some(
-      (message) =>
-        message.role === 'system' &&
-        message.content.includes('You run a J.A.R.V.I.S HUD agent turn'),
+    const isHudRequest = body.instructions?.includes(
+      'You run a J.A.R.V.I.S HUD agent turn',
     );
-    const isRepairRequest = messages.some((message) =>
-      message.content.includes('Repair this HUD envelope'),
-    );
+    const isRepairRequest = body.input?.includes('Repair this HUD envelope');
 
     if (isHudRequest || isRepairRequest) {
       const content =
@@ -271,11 +333,11 @@ async function mockHermes(page: Page, hudResponses: string[]) {
           jsx: VALID_BUILD_HUD,
         });
       hudIndex += 1;
-      await route.fulfill(sse(content));
+      await route.fulfill(responseSse(content));
       return;
     }
 
-    await route.fulfill(sse('대화 응답입니다.'));
+    await route.fulfill(responseSse('대화 응답입니다.'));
   });
 }
 
@@ -295,13 +357,24 @@ function envelope(value: {
   return JSON.stringify(value);
 }
 
-function sse(content: string) {
+function responseSse(content: string) {
   const payload = JSON.stringify({
-    choices: [{ delta: { content }, finish_reason: null }],
+    type: 'response.output_text.delta',
+    delta: content,
   });
+  const completed = JSON.stringify({ type: 'response.completed' });
   return {
     status: 200,
     headers: { 'content-type': 'text/event-stream' },
-    body: `data: ${payload}\n\ndata: [DONE]\n\n`,
+    body: [
+      'event: response.output_text.delta',
+      `data: ${payload}`,
+      '',
+      'event: response.completed',
+      `data: ${completed}`,
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n'),
   };
 }

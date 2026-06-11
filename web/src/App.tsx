@@ -13,12 +13,18 @@ import {
   shouldGenerateHud,
   type HudGenerationResult,
 } from './lib/hudGenerator';
-import { streamChat } from './lib/hermes';
-import type { ChatMessage, JarvisStatus } from './types';
+import {
+  createConversationName,
+  streamResponse,
+  type HermesToolEvent,
+} from './lib/hermes';
+import type { JarvisStatus } from './types';
 import './styles/app.css';
 import './hud/styles.css';
 
 type MobileTab = 'chat' | 'hud';
+const CONVERSATION_STORAGE_KEY = 'jarvis.conversation';
+const TRANSCRIPT_STORAGE_KEY = 'jarvis.transcript';
 
 export default function App() {
   if (window.location.pathname === '/gallery') {
@@ -29,8 +35,10 @@ export default function App() {
 }
 
 function ChatApp() {
-  const [messages, setMessages] = useState<DisplayMessage[]>([]);
+  const [conversation, setConversation] = useState(loadConversation);
+  const [messages, setMessages] = useState<DisplayMessage[]>(loadTranscript);
   const [status, setStatus] = useState<JarvisStatus>('idle');
+  const [statusDetail, setStatusDetail] = useState<string | undefined>();
   const [streaming, setStreaming] = useState(false);
   const [tab, setTab] = useState<MobileTab>('chat');
   const [hud, setHud] = useState<HudRenderState>({ phase: 'idle' });
@@ -43,17 +51,17 @@ function ChatApp() {
     hudRef.current = hud;
   }, [hud]);
 
+  useEffect(() => {
+    writeStorage(CONVERSATION_STORAGE_KEY, conversation);
+  }, [conversation]);
+
+  useEffect(() => {
+    writeStorage(TRANSCRIPT_STORAGE_KEY, JSON.stringify(messages));
+  }, [messages]);
+
   async function handleSend(text: string) {
     const userMsg: DisplayMessage = { role: 'user', content: text };
-
-    // 프론트는 페르소나/베이스 프롬프트를 붙이지 않는다 — 그건 Hermes 튜닝의 몫.
-    // 여기선 대화 내용만 그대로 전달한다(에러 의사 메시지는 제외).
-    const history: ChatMessage[] = [
-      ...messages
-        .filter((m) => !m.isError)
-        .map(({ role, content }) => ({ role, content })),
-      { role: 'user', content: text },
-    ];
+    const activeConversation = conversation;
 
     // 사용자 메시지 + 비어있는 assistant 메시지(여기에 토큰을 누적)를 먼저 그린다.
     setMessages((prev) => [
@@ -63,19 +71,21 @@ function ChatApp() {
     ]);
     setStreaming(true);
     setStatus('thinking');
+    setStatusDetail(undefined);
 
     const controller = new AbortController();
     abortRef.current = controller;
 
     if (shouldGenerateHud(text)) {
       setTab('hud');
-      void startHudGeneration(text);
+      void startHudGeneration(text, activeConversation);
     }
 
     try {
       let received = false;
-      for await (const delta of streamChat(history, {
+      for await (const delta of streamResponse(text, activeConversation, {
         signal: controller.signal,
+        onToolEvent: handleToolEvent,
       })) {
         received = true;
         setMessages((prev) => appendToLastAssistant(prev, delta));
@@ -87,10 +97,12 @@ function ChatApp() {
         );
       }
       setStatus('idle');
+      setStatusDetail(undefined);
     } catch (err) {
       if (controller.signal.aborted) {
         // 사용자가 중단함 — 에러 아님.
         setStatus('idle');
+        setStatusDetail(undefined);
       } else {
         const message = err instanceof Error ? err.message : String(err);
         setMessages((prev) => [
@@ -98,6 +110,7 @@ function ChatApp() {
           { role: 'assistant', content: `⚠ 오류: ${message}`, isError: true },
         ]);
         setStatus('warning');
+        setStatusDetail(undefined);
       }
     } finally {
       setStreaming(false);
@@ -108,12 +121,30 @@ function ChatApp() {
   function handleStop() {
     abortRef.current?.abort();
     hudAbortRef.current?.abort();
+    setStatusDetail(undefined);
     setHud((current) =>
       current.phase === 'generating'
         ? { phase: 'idle', message: 'HUD generation stopped.' }
         : current,
     );
   }
+
+  function handleNewConversation() {
+    abortRef.current?.abort();
+    hudAbortRef.current?.abort();
+    setConversation(createConversationName());
+    setMessages([]);
+    setHud({ phase: 'idle', message: '새 대화가 시작되었습니다.' });
+    setStatus('idle');
+    setStatusDetail(undefined);
+    lastRenderErrorRef.current = null;
+  }
+
+  const handleToolEvent = useCallback((event: HermesToolEvent) => {
+    const toolName = formatToolName(event.name);
+    setStatus('tooling');
+    setStatusDetail(event.phase === 'call' ? toolName : `${toolName} 완료`);
+  }, []);
 
   const setRenderedHud = useCallback((result: HudGenerationResult) => {
     if (import.meta.env.DEV && result.design) {
@@ -122,41 +153,43 @@ function ChatApp() {
     setHud(setRenderedHudState(result));
   }, []);
 
-  const repairRenderedHud = useCallback(
-    async (current: HudGenerationResult, errorMessage: string) => {
-      const controller = new AbortController();
-      hudAbortRef.current?.abort();
-      hudAbortRef.current = controller;
-      setHud({
-        phase: 'generating',
-        data: current.data,
-        design: current.design,
-        message: `HUD 자기치유 중 (${current.repairCount + 1}/2)`,
-        repairCount: current.repairCount,
+  async function repairRenderedHud(
+    current: HudGenerationResult,
+    errorMessage: string,
+  ) {
+    const controller = new AbortController();
+    hudAbortRef.current?.abort();
+    hudAbortRef.current = controller;
+    setHud({
+      phase: 'generating',
+      data: current.data,
+      design: current.design,
+      message: `HUD 자기치유 중 (${current.repairCount + 1}/2)`,
+      repairCount: current.repairCount,
+    });
+    setStatus('rendering');
+
+    try {
+      const repaired = await repairHudJsx(current, errorMessage, {
+        signal: controller.signal,
+        conversation,
+        onToolEvent: handleToolEvent,
       });
-      setStatus('rendering');
+      if (controller.signal.aborted) return;
+      lastRenderErrorRef.current = null;
+      setRenderedHud(repaired);
+      setStatus('idle');
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      const message = err instanceof Error ? err.message : String(err);
+      setRenderedHud(createHudFallback(current.data, message));
+      setStatus('warning');
+    } finally {
+      if (hudAbortRef.current === controller) hudAbortRef.current = null;
+    }
+  }
 
-      try {
-        const repaired = await repairHudJsx(current, errorMessage, {
-          signal: controller.signal,
-        });
-        if (controller.signal.aborted) return;
-        lastRenderErrorRef.current = null;
-        setRenderedHud(repaired);
-        setStatus('idle');
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        const message = err instanceof Error ? err.message : String(err);
-        setRenderedHud(createHudFallback(current.data, message));
-        setStatus('warning');
-      } finally {
-        if (hudAbortRef.current === controller) hudAbortRef.current = null;
-      }
-    },
-    [setRenderedHud],
-  );
-
-  async function startHudGeneration(task: string) {
+  async function startHudGeneration(task: string, activeConversation: string) {
     const controller = new AbortController();
     hudAbortRef.current?.abort();
     hudAbortRef.current = controller;
@@ -170,6 +203,8 @@ function ChatApp() {
       setHud({ phase: 'generating', data, message: 'HUD 생성 중' });
       const result = await generateHudJsx(task, data, {
         signal: controller.signal,
+        conversation: activeConversation,
+        onToolEvent: handleToolEvent,
       });
       if (controller.signal.aborted) return;
       setRenderedHud(result);
@@ -185,36 +220,33 @@ function ChatApp() {
     }
   }
 
-  const handleHudRenderError = useCallback(
-    (message: string) => {
-      const current = hudRef.current;
-      if (
-        current.phase !== 'rendered' ||
-        !current.jsx ||
-        !current.data ||
-        lastRenderErrorRef.current === message
-      ) {
-        return;
-      }
+  function handleHudRenderError(message: string) {
+    const current = hudRef.current;
+    if (
+      current.phase !== 'rendered' ||
+      !current.jsx ||
+      !current.data ||
+      lastRenderErrorRef.current === message
+    ) {
+      return;
+    }
 
-      lastRenderErrorRef.current = message;
-      void repairRenderedHud(
-        {
-          say: '',
-          design: current.design ?? null,
-          jsx: current.jsx,
-          data: current.data,
-          repairCount: current.repairCount ?? 0,
-        },
-        message,
-      );
-    },
-    [repairRenderedHud],
-  );
+    lastRenderErrorRef.current = message;
+    void repairRenderedHud(
+      {
+        say: '',
+        design: current.design ?? null,
+        jsx: current.jsx,
+        data: current.data,
+        repairCount: current.repairCount ?? 0,
+      },
+      message,
+    );
+  }
 
   return (
     <div className="app-shell">
-      <StatusBar status={status} />
+      <StatusBar status={status} detail={statusDetail} />
 
       <div className="mobile-tabs" role="tablist">
         <button
@@ -253,6 +285,7 @@ function ChatApp() {
         streaming={streaming}
         onSend={handleSend}
         onStop={handleStop}
+        onNewConversation={handleNewConversation}
       />
     </div>
   );
@@ -311,4 +344,54 @@ function dropEmptyTrailingAssistant(prev: DisplayMessage[]): DisplayMessage[] {
     return prev.slice(0, -1);
   }
   return prev;
+}
+
+function loadConversation(): string {
+  return readStorage(CONVERSATION_STORAGE_KEY) ?? createConversationName();
+}
+
+function loadTranscript(): DisplayMessage[] {
+  const raw = readStorage(TRANSCRIPT_STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isDisplayMessage);
+  } catch {
+    return [];
+  }
+}
+
+function readStorage(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStorage(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Storage can be unavailable in private contexts; server conversation still works.
+  }
+}
+
+function isDisplayMessage(value: unknown): value is DisplayMessage {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<DisplayMessage>;
+  return (
+    (candidate.role === 'user' || candidate.role === 'assistant') &&
+    typeof candidate.content === 'string'
+  );
+}
+
+function formatToolName(name: string): string {
+  const normalized = name.trim();
+  if (!normalized) return 'tool';
+  if (/terminal|shell|cmd|powershell/i.test(normalized)) return 'terminal';
+  if (/code/i.test(normalized)) return 'code_execution';
+  if (/file|read|write/i.test(normalized)) return 'file';
+  return normalized;
 }

@@ -1,7 +1,6 @@
-import type { ChatMessage } from '../types';
 import type { HudData } from './hudData';
 import { describeHudDataShape } from './hudData';
-import { streamChat } from './hermes';
+import { streamResponse, type HermesToolEvent } from './hermes';
 
 const ALLOWED_COMPONENTS = [
   'Panel',
@@ -41,6 +40,8 @@ export interface HudGenerationResult extends HudEnvelope {
 
 export interface GenerateHudOptions {
   signal?: AbortSignal;
+  conversation?: string;
+  onToolEvent?: (event: HermesToolEvent) => void;
 }
 
 export const HUD_SYSTEM_PROMPT = [
@@ -106,18 +107,12 @@ export async function generateHudJsx(
 ): Promise<HudGenerationResult> {
   const raw = await completeHud(
     [
-      { role: 'system', content: HUD_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: [
-          `Task context: ${task}`,
-          `Project root for terminal/file tools: ${__JARVIS_PROJECT_ROOT__}`,
-          describeHudDataShape(seedData),
-          `Seed data JSON: ${stringifyForPrompt(seedData)}`,
-          'Return one JSON envelope only.',
-        ].join('\n\n'),
-      },
-    ],
+      `Task context: ${task}`,
+      `Project root for terminal/file tools: ${__JARVIS_PROJECT_ROOT__}`,
+      describeHudDataShape(seedData),
+      `Seed data JSON: ${stringifyForPrompt(seedData)}`,
+      'Return one JSON envelope only.',
+    ].join('\n\n'),
     options,
   );
 
@@ -152,21 +147,15 @@ export async function repairHudJsx(
 
   const raw = await completeHud(
     [
-      { role: 'system', content: HUD_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: [
-          'Repair this HUD envelope. It failed validation or rendering.',
-          `Error: ${errorMessage}`,
-          'Previous envelope/JSX:',
-          previous.jsx ?? JSON.stringify(previous),
-          `Previous design JSON: ${JSON.stringify(previous.design ?? {})}`,
-          describeHudDataShape(previous.data),
-          `Available data JSON: ${stringifyForPrompt(previous.data)}`,
-          'Return fixed JSON envelope only. Preserve deterministic data values. Reuse or update design before jsx. Use only allowed components/props and data references.',
-        ].join('\n\n'),
-      },
-    ],
+      'Repair this HUD envelope. It failed validation or rendering.',
+      `Error: ${errorMessage}`,
+      'Previous envelope/JSX:',
+      previous.jsx ?? JSON.stringify(previous),
+      `Previous design JSON: ${JSON.stringify(previous.design ?? {})}`,
+      describeHudDataShape(previous.data),
+      `Available data JSON: ${stringifyForPrompt(previous.data)}`,
+      'Return fixed JSON envelope only. Preserve deterministic data values. Reuse or update design before jsx. Use only allowed components/props and data references.',
+    ].join('\n\n'),
     options,
   );
 
@@ -356,14 +345,25 @@ function assertValidHudDesign(design: HudDesign | null, jsx: string): void {
 }
 
 async function completeHud(
-  messages: ChatMessage[],
+  input: string,
   options: GenerateHudOptions,
 ): Promise<string> {
   let output = '';
-  for await (const delta of streamChat(messages, { signal: options.signal })) {
+  for await (const delta of streamResponse(input, requireConversation(options), {
+    signal: options.signal,
+    instructions: HUD_SYSTEM_PROMPT,
+    onToolEvent: options.onToolEvent,
+  })) {
     output += delta;
   }
   return output;
+}
+
+function requireConversation(options: GenerateHudOptions): string {
+  if (!options.conversation) {
+    throw new Error('HUD generation requires a Hermes conversation name.');
+  }
+  return options.conversation;
 }
 
 function tryParseJson(source: string): Record<string, unknown> | undefined {
