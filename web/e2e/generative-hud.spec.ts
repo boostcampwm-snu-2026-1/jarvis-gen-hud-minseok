@@ -110,11 +110,13 @@ test('uses named Responses conversations without resending transcript', async ({
   await revealChatPanel(page);
   await expect(page.getByText(/E: 볼륨이 가장 높습니다/)).toBeVisible();
 
-  const chatRequests = requests.filter((request) => !request.instructions);
-  const hudRequests = requests.filter((request) => request.instructions);
+  const chatRequests = requests.filter((request) => !isHudRequestBody(request));
+  const hudRequests = requests.filter(isHudRequestBody);
   const firstConversation = chatRequests[0].conversation;
   expect(chatRequests[0].input).toBe('디스크 사용량 봐줘');
   expect(chatRequests[0].messages).toBeUndefined();
+  expect(String(chatRequests[0].instructions)).toContain('project root');
+  expect(String(chatRequests[0].instructions)).toContain('term_project');
   expect(typeof firstConversation).toBe('string');
   expect(hudRequests[0].conversation).toBe(`${firstConversation}-hud`);
 
@@ -125,7 +127,7 @@ test('uses named Responses conversations without resending transcript', async ({
   await revealChatPanel(page);
   await expect(page.getByText(/E: 볼륨이 제일 찼습니다/)).toBeVisible();
 
-  const resumedChatRequests = requests.filter((request) => !request.instructions);
+  const resumedChatRequests = requests.filter((request) => !isHudRequestBody(request));
   expect(resumedChatRequests[1].input).toBe('방금 어느 볼륨이 제일 찼었지?');
   expect(resumedChatRequests[1].messages).toBeUndefined();
   expect(resumedChatRequests[1].conversation).toBe(firstConversation);
@@ -133,7 +135,7 @@ test('uses named Responses conversations without resending transcript', async ({
   await page.getByRole('button', { name: '새 대화' }).click();
   await submitCommand(page, '방금 뭐 실행했지?');
 
-  const finalChatRequests = requests.filter((request) => !request.instructions);
+  const finalChatRequests = requests.filter((request) => !isHudRequestBody(request));
   expect(finalChatRequests[2].input).toBe('방금 뭐 실행했지?');
   expect(finalChatRequests[2].messages).toBeUndefined();
   expect(finalChatRequests[2].conversation).not.toBe(firstConversation);
@@ -473,6 +475,12 @@ function envelope(value: {
   jsx: string | null;
 }): string {
   return JSON.stringify(value);
+}
+
+function isHudRequestBody(request: Record<string, unknown>) {
+  return String(request.instructions ?? '').includes(
+    'You run a J.A.R.V.I.S HUD agent turn',
+  );
 }
 
 function responseSse(content: string) {

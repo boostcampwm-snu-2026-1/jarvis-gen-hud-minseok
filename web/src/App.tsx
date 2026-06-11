@@ -30,6 +30,13 @@ import './hud/styles.css';
 type MobileTab = 'chat' | 'hud';
 const CONVERSATION_STORAGE_KEY = 'jarvis.conversation';
 const TRANSCRIPT_STORAGE_KEY = 'jarvis.transcript';
+const CHAT_SYSTEM_PROMPT = [
+  'You are J.A.R.V.I.S for this local frontend workspace.',
+  `When the user refers to this project, repo, app, or workspace, use this project root: ${__JARVIS_PROJECT_ROOT__}.`,
+  'Do not silently switch to the Hermes server working directory for project-local questions.',
+  'For requests that also render a HUD, keep the chat answer brief and let the HUD carry structured data.',
+  'Never output HUD JSON envelopes in the chat channel unless the user explicitly asks for raw JSON.',
+].join('\n');
 
 export default function App() {
   if (window.location.pathname === '/gallery') {
@@ -94,6 +101,7 @@ function ChatApp() {
       let bufferingEnvelope = false;
       for await (const delta of streamResponse(text, activeConversation, {
         signal: controller.signal,
+        instructions: CHAT_SYSTEM_PROMPT,
         onToolEvent: handleToolEvent,
       })) {
         received = true;
