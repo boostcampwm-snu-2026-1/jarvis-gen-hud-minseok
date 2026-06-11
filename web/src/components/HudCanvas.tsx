@@ -7,6 +7,7 @@ import {
   Gauge,
   KeyValue,
   Panel,
+  PieChart,
   ProgressBar,
   Stat,
   StatusPanel,
@@ -14,12 +15,14 @@ import {
   Waveform,
 } from '../hud';
 import type { HudData } from '../lib/hudData';
+import type { HudDesign } from '../lib/hudGenerator';
 
 export type HudPhase = 'idle' | 'generating' | 'rendered' | 'error';
 
 export interface HudRenderState {
   phase: HudPhase;
   jsx?: string;
+  design?: HudDesign | null;
   data?: HudData;
   message?: string;
   repairCount?: number;
@@ -39,6 +42,7 @@ export function HudCanvas({ hud, onRenderError }: Props) {
       Gauge,
       KeyValue,
       Panel,
+      PieChart,
       ProgressBar,
       Stat,
       StatusPanel,

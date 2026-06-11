@@ -68,6 +68,7 @@ function ChatApp() {
     abortRef.current = controller;
 
     if (shouldGenerateHud(text)) {
+      setTab('hud');
       void startHudGeneration(text);
     }
 
@@ -115,6 +116,9 @@ function ChatApp() {
   }
 
   const setRenderedHud = useCallback((result: HudGenerationResult) => {
+    if (import.meta.env.DEV && result.design) {
+      console.debug('[HUD design]', result.design);
+    }
     setHud(setRenderedHudState(result));
   }, []);
 
@@ -126,6 +130,7 @@ function ChatApp() {
       setHud({
         phase: 'generating',
         data: current.data,
+        design: current.design,
         message: `HUD 자기치유 중 (${current.repairCount + 1}/2)`,
         repairCount: current.repairCount,
       });
@@ -157,11 +162,12 @@ function ChatApp() {
     hudAbortRef.current = controller;
     lastRenderErrorRef.current = null;
 
-    const data = getHudData();
-    setHud({ phase: 'generating', data, message: 'HUD 생성 중' });
+    setHud({ phase: 'generating', message: 'HUD 데이터 준비 중' });
     setStatus('rendering');
 
     try {
+      const data = await getHudData(task);
+      setHud({ phase: 'generating', data, message: 'HUD 생성 중' });
       const result = await generateHudJsx(task, data, {
         signal: controller.signal,
       });
@@ -171,6 +177,7 @@ function ChatApp() {
     } catch (err) {
       if (controller.signal.aborted) return;
       const message = err instanceof Error ? err.message : String(err);
+      const data = await getHudData();
       setRenderedHud(createHudFallback(data, message));
       setStatus('warning');
     } finally {
@@ -193,6 +200,8 @@ function ChatApp() {
       lastRenderErrorRef.current = message;
       void repairRenderedHud(
         {
+          say: '',
+          design: current.design ?? null,
           jsx: current.jsx,
           data: current.data,
           repairCount: current.repairCount ?? 0,
@@ -250,9 +259,20 @@ function ChatApp() {
 }
 
 function setRenderedHudState(result: HudGenerationResult): HudRenderState {
+  if (result.jsx === null) {
+    return {
+      phase: 'idle',
+      data: result.data,
+      design: result.design,
+      message: result.say || 'HUD not needed for this request.',
+      repairCount: result.repairCount,
+    };
+  }
+
   return {
     phase: 'rendered',
     jsx: result.jsx,
+    design: result.design,
     data: result.data,
     repairCount: result.repairCount,
   };

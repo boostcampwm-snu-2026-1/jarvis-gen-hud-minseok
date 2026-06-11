@@ -90,6 +90,7 @@
 .hud-status-panel,
 .hud-stat,
 .hud-progress,
+.hud-pie,
 .hud-chart,
 .hud-waveform,
 .hud-alert {
@@ -200,6 +201,94 @@
 .hud-stat-value small {
   color: var(--text-mid);
   font-size: var(--fs-xs);
+}
+
+.hud-pie {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.hud-pie-body {
+  align-items: center;
+  display: grid;
+  gap: var(--sp-3);
+  grid-template-columns: minmax(112px, 0.8fr) minmax(0, 1.2fr);
+}
+
+.hud-pie svg {
+  color: var(--hud-state-color);
+  inline-size: min(100%, 172px);
+  justify-self: center;
+}
+
+.hud-pie-track,
+.hud-pie-segment {
+  fill: none;
+  stroke-linecap: butt;
+  stroke-width: 18;
+  transform: rotate(-90deg);
+  transform-origin: center;
+}
+
+.hud-pie-track {
+  stroke: var(--surface-2);
+}
+
+.hud-pie-segment {
+  stroke: var(--hud-state-color);
+}
+
+.hud-pie-core {
+  fill: var(--bg);
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.hud-pie-total {
+  dominant-baseline: middle;
+  fill: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.hud-pie-legend {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+}
+
+.hud-pie-legend div {
+  align-items: center;
+  display: grid;
+  gap: var(--sp-2);
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.hud-pie-legend dt {
+  align-items: center;
+  color: var(--text-mid);
+  display: flex;
+  font-size: var(--fs-xs);
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.hud-pie-legend dt span {
+  background: var(--hud-state-color);
+  block-size: 9px;
+  border-radius: var(--r-pill);
+  box-shadow: 0 0 10px var(--hud-state-color);
+  inline-size: 9px;
+  flex: 0 0 auto;
+}
+
+.hud-pie-legend dd {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  margin: 0;
 }
 
 .hud-stat {
@@ -429,5 +518,9 @@
   .hud-panel--span-2,
   .hud-panel--span-3 {
     grid-column: span 1;
+  }
+
+  .hud-pie-body {
+    grid-template-columns: 1fr;
   }
 }

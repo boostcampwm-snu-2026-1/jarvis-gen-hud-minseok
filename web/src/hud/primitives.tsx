@@ -16,17 +16,24 @@ export interface StatusPanelProps {
 }
 
 export interface ProgressBarProps {
-  value: number;
+  value?: number;
   label?: string;
   state?: State;
   showPct?: boolean;
 }
 
 export interface GaugeProps {
-  value: number;
+  value?: number;
   min?: number;
   max?: number;
   unit?: string;
+  label?: string;
+  state?: State;
+}
+
+export interface PieChartProps {
+  slices?: PieSlice[];
+  data?: PieSlice[];
   label?: string;
   state?: State;
 }
@@ -40,19 +47,23 @@ export interface StatProps {
 }
 
 export interface StepsProps {
-  steps: { name: string; status: StepStatus }[];
+  steps?: StepItem[];
+  items?: StepItem[];
+  data?: StepItem[];
 }
 
 export interface ChartProps {
-  kind: 'line' | 'bar' | 'area';
-  data: { x: string | number; y: number }[];
+  kind?: 'line' | 'bar' | 'area';
+  data?: { x: string | number; y: number }[];
+  points?: { x: string | number; y: number }[];
   unit?: string;
   label?: string;
   state?: State;
 }
 
 export interface WaveformProps {
-  samples: number[];
+  samples?: number[];
+  data?: number[];
   label?: string;
   state?: State;
 }
@@ -69,10 +80,26 @@ export interface BadgeProps {
 }
 
 export interface KeyValueProps {
-  items: { k: string; v: string }[];
+  items?: { k?: string; v?: string; label?: string; value?: string }[];
+  data?: { k?: string; v?: string; label?: string; value?: string }[];
 }
 
 const DEFAULT_STATE: State = 'info';
+
+type PieSlice = {
+  label?: string;
+  name?: string;
+  value?: number;
+  state?: State;
+};
+
+type StepItem = {
+  name?: string;
+  label?: string;
+  status?: StepStatus;
+  state?: State;
+  description?: string;
+};
 
 export function Panel({
   title,
@@ -106,7 +133,7 @@ export function ProgressBar({
   state = DEFAULT_STATE,
   showPct = false,
 }: ProgressBarProps) {
-  const normalized = toPercent(value);
+  const normalized = toPercent(value ?? 0);
 
   return (
     <div className={`hud-progress hud-state-${state}`}>
@@ -129,7 +156,8 @@ export function Gauge({
   label,
   state = DEFAULT_STATE,
 }: GaugeProps) {
-  const pct = normalize(value, min, max);
+  const displayValue = Number.isFinite(value) ? Number(value) : min;
+  const pct = normalize(displayValue, min, max);
   const radius = 42;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference * (1 - pct);
@@ -148,10 +176,85 @@ export function Gauge({
         />
       </svg>
       <div className="hud-gauge-readout">
-        <span>{value}</span>
+        <span>{displayValue}</span>
         {unit && <small>{unit}</small>}
       </div>
       {label && <div className="hud-label">{label}</div>}
+    </div>
+  );
+}
+
+export function PieChart({
+  slices,
+  data,
+  label,
+  state = DEFAULT_STATE,
+}: PieChartProps) {
+  const safeSlices = asArray(slices ?? data)
+    .map((slice, index) => ({
+      label: slice.label ?? slice.name ?? `Slice ${index + 1}`,
+      value: Number.isFinite(slice.value) ? Number(slice.value) : 0,
+      state: slice.state ?? cycleState(index),
+    }))
+    .filter((slice) => slice.value > 0);
+  const total = safeSlices.reduce((sum, slice) => sum + slice.value, 0);
+  const radius = 38;
+  const circumference = 2 * Math.PI * radius;
+
+  if (total <= 0 || safeSlices.length === 0) {
+    return <div className="hud-empty">No slices</div>;
+  }
+
+  const segments = safeSlices.map((slice, index) => {
+    const previousTotal = safeSlices
+      .slice(0, index)
+      .reduce((sum, previous) => sum + previous.value, 0);
+    const length = (slice.value / total) * circumference;
+    const dashOffset = -(previousTotal / total) * circumference;
+
+    return {
+      ...slice,
+      length,
+      dashOffset,
+      remainder: circumference - length,
+      pct: Math.round((slice.value / total) * 100),
+    };
+  });
+
+  return (
+    <div className={`hud-pie hud-state-${state}`}>
+      {label && <div className="hud-label">{label}</div>}
+      <div className="hud-pie-body">
+        <svg viewBox="0 0 120 120" role="img" aria-label={label}>
+          <circle className="hud-pie-track" cx="60" cy="60" r={radius} />
+          {segments.map((slice) => (
+            <circle
+              key={slice.label}
+              className={`hud-pie-segment hud-state-${slice.state}`}
+              cx="60"
+              cy="60"
+              r={radius}
+              strokeDasharray={`${slice.length} ${slice.remainder}`}
+              strokeDashoffset={slice.dashOffset}
+            />
+          ))}
+          <circle className="hud-pie-core" cx="60" cy="60" r="24" />
+          <text className="hud-pie-total" x="60" y="62">
+            {safeSlices.length}
+          </text>
+        </svg>
+        <dl className="hud-pie-legend">
+          {segments.map((slice) => (
+            <div key={slice.label}>
+              <dt className={`hud-state-${slice.state}`}>
+                <span aria-hidden="true" />
+                {slice.label}
+              </dt>
+              <dd>{slice.pct}%</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
     </div>
   );
 }
@@ -163,6 +266,8 @@ export function Stat({
   delta,
   state = DEFAULT_STATE,
 }: StatProps) {
+  const numericDelta = typeof delta === 'number' ? delta : undefined;
+
   return (
     <div className={`hud-stat hud-state-${state}`}>
       <div className="hud-label">{label}</div>
@@ -170,37 +275,49 @@ export function Stat({
         <span>{value}</span>
         {unit && <small>{unit}</small>}
       </div>
-      {delta !== undefined && (
-        <div className={`hud-delta ${delta >= 0 ? 'is-up' : 'is-down'}`}>
-          {delta >= 0 ? '+' : ''}
-          {delta}
+      {numericDelta !== undefined && (
+        <div className={`hud-delta ${numericDelta >= 0 ? 'is-up' : 'is-down'}`}>
+          {numericDelta >= 0 ? '+' : ''}
+          {numericDelta}
         </div>
       )}
     </div>
   );
 }
 
-export function Steps({ steps }: StepsProps) {
+export function Steps({ steps, items, data }: StepsProps) {
+  const safeSteps = asArray(steps ?? items ?? data);
+
+  if (safeSteps.length === 0) {
+    return <div className="hud-empty">No steps</div>;
+  }
+
   return (
     <ol className="hud-steps">
-      {steps.map((step) => (
-        <li key={`${step.name}-${step.status}`} className={`is-${step.status}`}>
-          <span className="hud-step-dot" aria-hidden="true" />
-          <span>{step.name}</span>
-        </li>
-      ))}
+      {safeSteps.map((step) => {
+        const name = step.name ?? step.label ?? 'Untitled step';
+        const status = normalizeStepStatus(step.status ?? step.state);
+
+        return (
+          <li key={`${name}-${status}`} className={`is-${status}`}>
+            <span className="hud-step-dot" aria-hidden="true" />
+            <span>{name}</span>
+          </li>
+        );
+      })}
     </ol>
   );
 }
 
 export function Chart({
-  kind,
+  kind = 'line',
   data,
+  points: pointData,
   unit,
   label,
   state = DEFAULT_STATE,
 }: ChartProps) {
-  const points = chartPoints(data);
+  const points = chartPoints(asArray(data ?? pointData));
 
   return (
     <div className={`hud-chart hud-state-${state}`}>
@@ -246,10 +363,11 @@ export function Chart({
 
 export function Waveform({
   samples,
+  data,
   label,
   state = DEFAULT_STATE,
 }: WaveformProps) {
-  const points = waveformPoints(samples);
+  const points = waveformPoints(asArray(samples ?? data));
 
   return (
     <div className={`hud-waveform hud-state-${state}`}>
@@ -279,13 +397,19 @@ export function Badge({ text, state = DEFAULT_STATE }: BadgeProps) {
   return <span className={`hud-badge hud-state-${state}`}>{text}</span>;
 }
 
-export function KeyValue({ items }: KeyValueProps) {
+export function KeyValue({ items, data }: KeyValueProps) {
+  const safeItems = asArray(items ?? data);
+
+  if (safeItems.length === 0) {
+    return <div className="hud-empty">No items</div>;
+  }
+
   return (
     <dl className="hud-key-value">
-      {items.map((item) => (
-        <div key={item.k}>
-          <dt>{item.k}</dt>
-          <dd>{item.v}</dd>
+      {safeItems.map((item) => (
+        <div key={item.k ?? item.label}>
+          <dt>{item.k ?? item.label}</dt>
+          <dd>{item.v ?? item.value}</dd>
         </div>
       ))}
     </dl>
@@ -293,10 +417,12 @@ export function KeyValue({ items }: KeyValueProps) {
 }
 
 function toPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0;
   return clamp(value, 0, 100);
 }
 
 function normalize(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return 0;
   if (max <= min) return 0;
   return clamp((value - min) / (max - min), 0, 1);
 }
@@ -312,7 +438,7 @@ interface ChartPoint {
 }
 
 function chartPoints(data: ChartProps['data']): ChartPoint[] {
-  if (data.length === 0) return [];
+  if (!data || data.length === 0) return [];
 
   const values = data.map((point) => point.y);
   const min = Math.min(...values);
@@ -347,4 +473,23 @@ function waveformPoints(samples: number[]): string | undefined {
       return `${x},${y}`;
     })
     .join(' ');
+}
+
+function asArray<T>(value: T[] | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeStepStatus(status: StepItem['status'] | StepItem['state']): StepStatus {
+  if (status === 'stable') return 'done';
+  if (status === 'info') return 'active';
+  if (status === 'caution') return 'active';
+  if (status === 'critical') return 'failed';
+  if (status === 'done' || status === 'active' || status === 'pending' || status === 'failed') {
+    return status;
+  }
+  return 'pending';
+}
+
+function cycleState(index: number): State {
+  return (['info', 'stable', 'caution', 'critical'] as const)[index % 4];
 }
