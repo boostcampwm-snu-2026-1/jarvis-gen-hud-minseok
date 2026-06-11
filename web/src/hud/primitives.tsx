@@ -31,6 +31,13 @@ export interface GaugeProps {
   state?: State;
 }
 
+export interface PieChartProps {
+  slices?: PieSlice[];
+  data?: PieSlice[];
+  label?: string;
+  state?: State;
+}
+
 export interface StatProps {
   label: string;
   value: string | number;
@@ -78,6 +85,13 @@ export interface KeyValueProps {
 }
 
 const DEFAULT_STATE: State = 'info';
+
+type PieSlice = {
+  label?: string;
+  name?: string;
+  value?: number;
+  state?: State;
+};
 
 type StepItem = {
   name?: string;
@@ -166,6 +180,81 @@ export function Gauge({
         {unit && <small>{unit}</small>}
       </div>
       {label && <div className="hud-label">{label}</div>}
+    </div>
+  );
+}
+
+export function PieChart({
+  slices,
+  data,
+  label,
+  state = DEFAULT_STATE,
+}: PieChartProps) {
+  const safeSlices = asArray(slices ?? data)
+    .map((slice, index) => ({
+      label: slice.label ?? slice.name ?? `Slice ${index + 1}`,
+      value: Number.isFinite(slice.value) ? Number(slice.value) : 0,
+      state: slice.state ?? cycleState(index),
+    }))
+    .filter((slice) => slice.value > 0);
+  const total = safeSlices.reduce((sum, slice) => sum + slice.value, 0);
+  const radius = 38;
+  const circumference = 2 * Math.PI * radius;
+
+  if (total <= 0 || safeSlices.length === 0) {
+    return <div className="hud-empty">No slices</div>;
+  }
+
+  const segments = safeSlices.map((slice, index) => {
+    const previousTotal = safeSlices
+      .slice(0, index)
+      .reduce((sum, previous) => sum + previous.value, 0);
+    const length = (slice.value / total) * circumference;
+    const dashOffset = -(previousTotal / total) * circumference;
+
+    return {
+      ...slice,
+      length,
+      dashOffset,
+      remainder: circumference - length,
+      pct: Math.round((slice.value / total) * 100),
+    };
+  });
+
+  return (
+    <div className={`hud-pie hud-state-${state}`}>
+      {label && <div className="hud-label">{label}</div>}
+      <div className="hud-pie-body">
+        <svg viewBox="0 0 120 120" role="img" aria-label={label}>
+          <circle className="hud-pie-track" cx="60" cy="60" r={radius} />
+          {segments.map((slice) => (
+            <circle
+              key={slice.label}
+              className={`hud-pie-segment hud-state-${slice.state}`}
+              cx="60"
+              cy="60"
+              r={radius}
+              strokeDasharray={`${slice.length} ${slice.remainder}`}
+              strokeDashoffset={slice.dashOffset}
+            />
+          ))}
+          <circle className="hud-pie-core" cx="60" cy="60" r="24" />
+          <text className="hud-pie-total" x="60" y="62">
+            {safeSlices.length}
+          </text>
+        </svg>
+        <dl className="hud-pie-legend">
+          {segments.map((slice) => (
+            <div key={slice.label}>
+              <dt className={`hud-state-${slice.state}`}>
+                <span aria-hidden="true" />
+                {slice.label}
+              </dt>
+              <dd>{slice.pct}%</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
     </div>
   );
 }
@@ -399,4 +488,8 @@ function normalizeStepStatus(status: StepItem['status'] | StepItem['state']): St
     return status;
   }
   return 'pending';
+}
+
+function cycleState(index: number): State {
+  return (['info', 'stable', 'caution', 'critical'] as const)[index % 4];
 }

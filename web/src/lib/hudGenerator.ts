@@ -8,6 +8,7 @@ const ALLOWED_COMPONENTS = [
   'StatusPanel',
   'ProgressBar',
   'Gauge',
+  'PieChart',
   'Stat',
   'Steps',
   'Chart',
@@ -42,16 +43,18 @@ export const HUD_SYSTEM_PROMPT = [
   'When possible, include data._source = { tool, command, exitCode }.',
   'Keep data under 50KB. Summarize large tool output into compact JSON before returning it.',
   `Allowed JSX components: ${ALLOWED_COMPONENTS.join(', ')}. Use only these components.`,
-  'Component props: Panel title state; ProgressBar value label state showPct; Steps steps; StatusPanel label value state hint; Gauge value min max unit label state; Stat label value unit delta state; Chart kind data unit label state; Waveform samples label state; Alert severity title message; Badge text state; KeyValue items.',
+  'Component props: Panel title state; ProgressBar value label state showPct; Steps steps; StatusPanel label value state hint; Gauge value min max unit label state; PieChart slices label state; Stat label value unit delta state; Chart kind data unit label state; Waveform samples label state; Alert severity title message; Badge text state; KeyValue items.',
   'Valid state/severity values are only stable, info, caution, critical.',
   'No imports. No arbitrary HTML elements. No inline style. No className.',
   'Top-level JSX must be exactly one <Panel>...</Panel> when jsx is not null.',
   'Numbers and arrays in JSX props must reference data.*. Do not hardcode generated numbers or array literals.',
   'A HUD is not a label table. Do not return a KeyValue-only HUD.',
-  'For quantitative tasks, include at least one visual primitive: Gauge, ProgressBar, Chart, Stat, Steps, or StatusPanel. KeyValue may be supporting detail only.',
+  'For quantitative tasks, include at least one visual primitive: PieChart, Gauge, ProgressBar, Chart, Stat, Steps, or StatusPanel. KeyValue may be supporting detail only.',
+  'For disk, storage, memory, quota, or percentage breakdown tasks, prefer PieChart. Create data.slices = Array<{ label, value, state }> and use <PieChart slices={data.slices} ... />.',
   'For KeyValue, create data.summaryItems and use <KeyValue items={data.summaryItems} />.',
   'For Steps, create data.steps and use <Steps steps={data.steps} />.',
   'For Chart, create data.chartData and use <Chart data={data.chartData} />.',
+  'For PieChart, create data.slices and use <PieChart slices={data.slices} />.',
   'For Waveform, create data.samples and use <Waveform samples={data.samples} />.',
   'For known build status seed data, return data with the provided build object and use <ProgressBar value={data.build.progress} ... /> and <Steps steps={data.build.steps} />.',
   'If a HUD is not useful or data collection fails, return jsx:null and explain briefly in say.',
@@ -264,10 +267,10 @@ export function assertValidHudJsx(jsx: string): void {
   if (/<\/?[a-z][\w-]*\b/.test(trimmed)) {
     throw new Error('HUD JSX cannot use arbitrary HTML elements.');
   }
-  if (/\b(?:value|steps|samples|data|items)\s*=\s*{\s*\d/.test(trimmed)) {
+  if (/\b(?:value|steps|samples|data|items|slices)\s*=\s*{\s*\d/.test(trimmed)) {
     throw new Error('HUD JSX must reference deterministic data instead of hardcoded numbers.');
   }
-  if (/\b(?:items|steps|samples|data)\s*=\s*{\s*(?!data\.)/.test(trimmed)) {
+  if (/\b(?:items|steps|samples|data|slices)\s*=\s*{\s*(?!data\.)/.test(trimmed)) {
     throw new Error('HUD array props must reference data.* directly.');
   }
   if (/\b(?:state|severity)\s*=\s*"(?!stable"|info"|caution"|critical")/.test(trimmed)) {
@@ -287,8 +290,11 @@ export function assertValidHudJsx(jsx: string): void {
     [...components].every((component) => component === 'Panel' || component === 'KeyValue')
   ) {
     throw new Error(
-      'HUD cannot be KeyValue-only. Add a visual primitive such as Gauge, ProgressBar, Chart, Stat, Steps, StatusPanel, or Alert.',
+      'HUD cannot be KeyValue-only. Add a visual primitive such as PieChart, Gauge, ProgressBar, Chart, Stat, Steps, StatusPanel, or Alert.',
     );
+  }
+  if (/\b(disk|storage|drive|quota|memory)\b/i.test(trimmed) && !components.has('PieChart')) {
+    throw new Error('Disk, storage, drive, quota, and memory HUDs must include PieChart.');
   }
 }
 

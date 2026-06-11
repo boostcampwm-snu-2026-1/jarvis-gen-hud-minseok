@@ -23,6 +23,7 @@ ALLOWED_COMPONENTS = {
     "StatusPanel",
     "ProgressBar",
     "Gauge",
+    "PieChart",
     "Stat",
     "Steps",
     "Chart",
@@ -46,13 +47,14 @@ Rules:
 - Include data._source when possible: {"tool": string, "command": string, "exitCode": number}.
 - Keep data under 50 KB. Summarize large tool output into compact JSON.
 - jsx must be constrained JSX using only these components:
-  Panel, StatusPanel, ProgressBar, Gauge, Stat, Steps, Chart, Waveform, Alert, Badge, KeyValue.
+  Panel, StatusPanel, ProgressBar, Gauge, PieChart, Stat, Steps, Chart, Waveform, Alert, Badge, KeyValue.
 - Component props:
   Panel title state;
   ProgressBar value label state showPct;
   Steps steps;
   StatusPanel label value state hint;
   Gauge value min max unit label state;
+  PieChart slices label state;
   Stat label value unit delta state;
   Chart kind data unit label state;
   Waveform samples label state;
@@ -70,7 +72,9 @@ Rules:
 - Do not use array literals in JSX props.
 - A HUD is not a label table. Do not return a KeyValue-only HUD.
 - For quantitative tasks, include at least one visual primitive:
-  Gauge, ProgressBar, Chart, Stat, Steps, or StatusPanel. KeyValue may be supporting detail only.
+  PieChart, Gauge, ProgressBar, Chart, Stat, Steps, or StatusPanel. KeyValue may be supporting detail only.
+- For disk, storage, memory, quota, or percentage breakdown tasks, prefer PieChart.
+  Create data.slices as an array and use <PieChart slices={data.slices} />.
 - If a HUD is not useful or data collection fails, set jsx to null and explain in say.
 """.strip()
 
@@ -78,14 +82,17 @@ TASKS = [
     {
         "name": "git_recent_activity",
         "prompt": f"Show recent git activity for the repository at {ROOT}. Use terminal git log in that path and return a HUD.",
+        "expect_hud": True,
     },
     {
         "name": "disk_usage",
         "prompt": f"Show disk usage for the project drive containing {ROOT}. Use a terminal command and return a HUD.",
+        "expect_hud": True,
     },
     {
         "name": "npm_package_health",
         "prompt": f"Inspect the web package at {ROOT / 'web'} without installing dependencies. Use package files and terminal commands if useful, then return a HUD.",
+        "expect_hud": True,
     },
 ]
 
@@ -104,6 +111,8 @@ def main() -> int:
             content = call_hermes(api_key, task["prompt"])
             envelope = extract_envelope(content)
             validate_envelope(envelope)
+            if task.get("expect_hud") and envelope["jsx"] is None:
+                raise ValueError("Expected a HUD, but Hermes returned jsx:null.")
             if envelope["jsx"] is not None:
                 assert_valid_hud_jsx(envelope["jsx"])
             duration = round(time.time() - started, 2)
@@ -230,14 +239,16 @@ def assert_valid_hud_jsx(jsx: str) -> None:
         if component not in ALLOWED_COMPONENTS:
             raise ValueError(f"HUD JSX uses disallowed component: {component}.")
 
-    if re.search(r"\b(?:value|steps|samples|data)\s*=\s*\{\s*\d", trimmed):
+    if re.search(r"\b(?:value|steps|samples|data|slices)\s*=\s*\{\s*\d", trimmed):
         raise ValueError("HUD JSX must reference deterministic data instead of hardcoded numbers.")
-    if re.search(r"\b(?:items|steps|samples|data)\s*=\s*\{\s*(?!data\.)", trimmed):
+    if re.search(r"\b(?:items|steps|samples|data|slices)\s*=\s*\{\s*(?!data\.)", trimmed):
         raise ValueError("Array props must reference data.* directly.")
     if re.search(r"\b(?:state|severity)\s*=\s*\"(?!stable\"|info\"|caution\"|critical\")", trimmed):
         raise ValueError("State props must use stable, info, caution, or critical.")
     if "KeyValue" in components and components.issubset({"Panel", "KeyValue"}):
         raise ValueError("HUD cannot be KeyValue-only.")
+    if re.search(r"\b(disk|storage|drive|quota|memory)\b", trimmed, re.IGNORECASE) and "PieChart" not in components:
+        raise ValueError("Disk/storage HUDs must include PieChart.")
 
 
 def preview(value: Any) -> Any:

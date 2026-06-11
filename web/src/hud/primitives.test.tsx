@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { Chart, KeyValue, Steps, Waveform } from './primitives';
+import { Chart, KeyValue, PieChart, Steps, Waveform } from './primitives';
 
 describe('HUD primitives', () => {
   it('renders empty states instead of throwing when generated props are missing', () => {
@@ -29,6 +29,12 @@ describe('HUD primitives', () => {
           ]}
         />
         <KeyValue data={[{ k: 'scope', v: 'hud' }]} />
+        <PieChart
+          slices={[
+            { label: 'Used', value: 14, state: 'caution' },
+            { label: 'Free', value: 86, state: 'stable' },
+          ]}
+        />
         <Chart points={[{ x: 'now', y: 1 }]} />
         <Waveform data={[0, 1, 0]} />
       </>,
@@ -38,6 +44,8 @@ describe('HUD primitives', () => {
     expect(screen.getByText('Generated label')).toBeInTheDocument();
     expect(screen.getByText('scope')).toBeInTheDocument();
     expect(screen.getByText('hud')).toBeInTheDocument();
-    expect(screen.getAllByRole('img')).toHaveLength(2);
+    expect(screen.getByText('Used')).toBeInTheDocument();
+    expect(screen.getByText('Free')).toBeInTheDocument();
+    expect(screen.getAllByRole('img')).toHaveLength(3);
   });
 });

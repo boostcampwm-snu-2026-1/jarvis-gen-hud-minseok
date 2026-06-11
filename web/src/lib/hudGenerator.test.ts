@@ -71,6 +71,12 @@ describe('assertValidHudJsx', () => {
         '<Panel title="Bad" state="info"><Steps steps={[{ name: "x", status: "done" }]} /></Panel>',
       ),
     ).toThrow(/array props/);
+
+    expect(() =>
+      assertValidHudJsx(
+        '<Panel title="Bad" state="info"><PieChart slices={[{ label: "Used", value: 14 }]} /></Panel>',
+      ),
+    ).toThrow(/array props/);
   });
 
   it('rejects invalid state tokens', () => {
@@ -87,5 +93,21 @@ describe('assertValidHudJsx', () => {
         '<Panel title="Flat" state="info"><KeyValue items={data.summaryItems} /></Panel>',
       ),
     ).toThrow(/KeyValue-only/);
+  });
+
+  it('allows PieChart as a visual HUD primitive', () => {
+    expect(() =>
+      assertValidHudJsx(
+        '<Panel title="Disk" state="stable"><PieChart slices={data.slices} label="Drive usage" state="stable" /><KeyValue items={data.summaryItems} /></Panel>',
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects disk HUDs without PieChart', () => {
+    expect(() =>
+      assertValidHudJsx(
+        '<Panel title="Disk Usage" state="stable"><ProgressBar value={data.usePct} label="Used" state="stable" showPct /><KeyValue items={data.summaryItems} /></Panel>',
+      ),
+    ).toThrow(/PieChart/);
   });
 });

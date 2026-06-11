@@ -71,6 +71,39 @@ test('renders an invented project HUD from agent-supplied data', async ({ page }
   await expect(page.getByText('Working tree has changes')).toBeVisible();
 });
 
+test('renders disk usage as a pie-style HUD, not a flat table', async ({ page }) => {
+  await mockHermes(page, [
+    envelope({
+      say: 'Disk usage ready.',
+      data: {
+        usePct: 14,
+        slices: [
+          { label: 'Used', value: 14, state: 'caution' },
+          { label: 'Free', value: 86, state: 'stable' },
+        ],
+        summaryItems: [
+          { k: 'drive', v: 'E:' },
+          { k: 'used', v: '257G' },
+          { k: 'free', v: '1.6T' },
+        ],
+      },
+      jsx:
+        '<Panel title="Disk Usage" state="stable"><PieChart slices={data.slices} label="E: drive" state="stable" /><ProgressBar value={data.usePct} label="Used" state="stable" showPct /><KeyValue items={data.summaryItems} /></Panel>',
+    }),
+  ]);
+  await page.goto('/');
+
+  await submitCommand(page, '디스크 사용량 보여줘');
+  await revealHudPanel(page);
+
+  await expect(page.getByText('Disk Usage')).toBeVisible();
+  await expect(page.getByText('E: drive')).toBeVisible();
+  await expect(page.locator('.hud-pie-legend')).toContainText('Used');
+  await expect(page.locator('.hud-pie-legend')).toContainText('Free');
+  await expect(page.locator('.hud-pie-legend')).toContainText('14%');
+  await expect(page.locator('.hud-pie-segment')).toHaveCount(2);
+});
+
 test('does not render HUD when envelope returns jsx null', async ({ page }) => {
   await mockHermes(page, [
     envelope({
