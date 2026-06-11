@@ -7,6 +7,10 @@
 
 const HERMES_ENDPOINT = '/v1/responses';
 const HERMES_MODEL = import.meta.env.VITE_HERMES_MODEL ?? 'hermes';
+const DEFAULT_SESSION_KEY = 'jarvis:main';
+const SESSION_KEY =
+  sanitizeSessionKey(import.meta.env.VITE_JARVIS_SESSION_KEY) ??
+  DEFAULT_SESSION_KEY;
 
 export interface HermesToolEvent {
   phase: 'call' | 'output';
@@ -18,6 +22,7 @@ export interface StreamResponseOptions {
   signal?: AbortSignal;
   model?: string;
   instructions?: string;
+  store?: boolean;
   onToolEvent?: (event: HermesToolEvent) => void;
 }
 
@@ -28,21 +33,24 @@ export interface ResponseSseEvent {
 
 export async function* streamResponse(
   input: string,
-  conversation: string,
+  conversation: string | null,
   options: StreamResponseOptions = {},
 ): AsyncGenerator<string, void, unknown> {
   const body: Record<string, unknown> = {
     model: options.model ?? HERMES_MODEL,
     input,
-    conversation,
-    store: true,
+    store: options.store ?? true,
     stream: true,
   };
+  if (conversation) body.conversation = conversation;
   if (options.instructions) body.instructions = options.instructions;
 
   const response = await fetch(HERMES_ENDPOINT, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Hermes-Session-Key': SESSION_KEY,
+    },
     body: JSON.stringify(body),
     signal: options.signal,
   });
@@ -97,6 +105,10 @@ export function createConversationName(date = new Date()): string {
   return `jarvis-${date.toISOString().replace(/[:.]/g, '-')}`;
 }
 
+export function getHermesSessionKeyForTest(): string {
+  return SESSION_KEY;
+}
+
 export function extractResponseTextDeltaForTest(
   event: ResponseSseEvent,
 ): string | undefined {
@@ -119,7 +131,9 @@ function drainSseEvents(buffer: string): {
 
   while (boundary !== -1) {
     const rawEvent = remainder.slice(0, boundary);
-    remainder = remainder.slice(boundary + (remainder[boundary] === '\r' ? 4 : 2));
+    remainder = remainder.slice(
+      boundary + (remainder[boundary] === '\r' ? 4 : 2),
+    );
     const event = parseSseEvent(rawEvent);
     if (event) events.push(event);
     boundary = findEventBoundary(remainder);
@@ -227,6 +241,23 @@ function getString(value: unknown): string | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function sanitizeSessionKey(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 256 || hasControlCharacter(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 31 || code === 127) return true;
+  }
+  return false;
 }
 
 async function safeReadText(response: Response): Promise<string> {

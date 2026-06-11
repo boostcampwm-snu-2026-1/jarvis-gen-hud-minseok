@@ -3,6 +3,7 @@ import {
   createConversationName,
   extractResponseTextDeltaForTest,
   extractToolEventForTest,
+  getHermesSessionKeyForTest,
 } from './hermes';
 
 describe('Responses SSE helpers', () => {
@@ -52,5 +53,9 @@ describe('Responses SSE helpers', () => {
     const name = createConversationName(new Date('2026-06-11T05:00:00.000Z'));
 
     expect(name).toBe('jarvis-2026-06-11T05-00-00-000Z');
+  });
+
+  it('uses the stable Jarvis memory scope by default', () => {
+    expect(getHermesSessionKeyForTest()).toBe('jarvis:main');
   });
 });
