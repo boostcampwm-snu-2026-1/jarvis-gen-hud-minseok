@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { StatusBar } from './components/StatusBar';
 import { ConversationPanel } from './components/ConversationPanel';
 import type { DisplayMessage } from './components/ConversationPanel';
-import { Gallery } from './Gallery';
 import { HudCanvas, type HudRenderState } from './components/HudCanvas';
 import { InputBar } from './components/InputBar';
-import { getHudData } from './lib/hudData';
+import { StatusBar } from './components/StatusBar';
+import { Gallery } from './Gallery';
 import {
+  assertValidHudEnvelope,
   createHudFallback,
-  generateHudJsx,
+  extractHudEnvelope,
+  HUD_SYSTEM_PROMPT,
   repairHudJsx,
-  shouldGenerateHud,
   type HudGenerationResult,
 } from './lib/hudGenerator';
+import { EnvelopeSayStreamParser } from './lib/hudEnvelopeStream';
 import {
   createConversationName,
   streamResponse,
@@ -28,15 +29,13 @@ import './styles/app.css';
 import './hud/styles.css';
 
 type MobileTab = 'chat' | 'hud';
+
 const CONVERSATION_STORAGE_KEY = 'jarvis.conversation';
 const TRANSCRIPT_STORAGE_KEY = 'jarvis.transcript';
-const CHAT_SYSTEM_PROMPT = [
-  'You are J.A.R.V.I.S for this local frontend workspace.',
-  `When the user refers to this project, repo, app, or workspace, use this project root: ${__JARVIS_PROJECT_ROOT__}.`,
-  'Do not silently switch to the Hermes server working directory for project-local questions.',
-  'For requests that also render a HUD, keep the chat answer brief and let the HUD carry structured data.',
-  'Never output HUD JSON envelopes in the chat channel unless the user explicitly asks for raw JSON.',
-].join('\n');
+const HUD_STORAGE_KEY = 'jarvis.hud';
+const MAX_CONVERSATION_TURNS = readTurnLimit(
+  import.meta.env.VITE_JARVIS_MAX_CONVERSATION_TURNS,
+);
 
 export default function App() {
   if (window.location.pathname === '/gallery') {
@@ -53,7 +52,7 @@ function ChatApp() {
   const [statusDetail, setStatusDetail] = useState<string | undefined>();
   const [streaming, setStreaming] = useState(false);
   const [tab, setTab] = useState<MobileTab>('chat');
-  const [hud, setHud] = useState<HudRenderState>({ phase: 'idle' });
+  const [hud, setHud] = useState<HudRenderState>(loadHudState);
   const abortRef = useRef<AbortController | null>(null);
   const hudAbortRef = useRef<AbortController | null>(null);
   const liveHudRef = useRef<LiveHudClient | null>(null);
@@ -75,9 +74,14 @@ function ChatApp() {
 
   async function handleSend(text: string) {
     const userMsg: DisplayMessage = { role: 'user', content: text };
-    const activeConversation = conversation;
+    const activeConversation = shouldRotateConversation(messages)
+      ? createConversationName()
+      : conversation;
 
-    // 사용자 메시지 + 비어있는 assistant 메시지(여기에 토큰을 누적)를 먼저 그린다.
+    if (activeConversation !== conversation) {
+      setConversation(activeConversation);
+    }
+
     setMessages((prev) => [
       ...prev,
       userMsg,
@@ -90,50 +94,53 @@ function ChatApp() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    if (shouldGenerateHud(text)) {
-      setTab('hud');
-      void startHudGeneration(text, activeConversation);
-    }
-
     try {
       let received = false;
-      let assistantBuffer = '';
-      let bufferingEnvelope = false;
+      let streamedText = false;
+      let sayComplete = false;
+      const parser = new EnvelopeSayStreamParser();
+
       for await (const delta of streamResponse(text, activeConversation, {
         signal: controller.signal,
-        instructions: CHAT_SYSTEM_PROMPT,
+        instructions: HUD_SYSTEM_PROMPT,
         onToolEvent: handleToolEvent,
       })) {
         received = true;
-        assistantBuffer += delta;
-        if (shouldBufferPotentialEnvelope(assistantBuffer, bufferingEnvelope)) {
-          bufferingEnvelope = true;
-        } else {
-          setMessages((prev) => appendToLastAssistant(prev, delta));
+        const parsed = parser.push(delta);
+
+        if (parsed.text) {
+          streamedText = true;
+          setMessages((prev) => appendToLastAssistant(prev, parsed.text));
+        }
+        if (parsed.mode === 'envelope' && parsed.sayComplete && !sayComplete) {
+          sayComplete = true;
+          setStatus('rendering');
+          setStatusDetail(undefined);
         }
       }
-      // 토큰이 하나도 안 오면 빈 말풍선이 남으므로 안내로 채운다.
+
       if (!received) {
-        setMessages((prev) =>
-          appendToLastAssistant(prev, '(응답이 비어 있습니다.)'),
-        );
-      } else if (bufferingEnvelope) {
-        setMessages((prev) =>
-          replaceLastAssistant(prev, extractEnvelopeSay(assistantBuffer)),
-        );
+        setMessages((prev) => appendToLastAssistant(prev, '(empty response)'));
+      } else {
+        const finished = parser.finish();
+        if (finished.isEnvelope) {
+          await finishEnvelopeTurn(finished.raw, finished.say, controller);
+        } else if (!streamedText && finished.raw) {
+          setMessages((prev) => appendToLastAssistant(prev, finished.raw));
+        }
       }
+
       setStatus('idle');
       setStatusDetail(undefined);
     } catch (err) {
       if (controller.signal.aborted) {
-        // 사용자가 중단함 — 에러 아님.
         setStatus('idle');
         setStatusDetail(undefined);
       } else {
         const message = err instanceof Error ? err.message : String(err);
         setMessages((prev) => [
           ...dropEmptyTrailingAssistant(prev),
-          { role: 'assistant', content: `⚠ 오류: ${message}`, isError: true },
+          { role: 'assistant', content: `Error: ${message}`, isError: true },
         ]);
         setStatus('warning');
         setStatusDetail(undefined);
@@ -158,9 +165,11 @@ function ChatApp() {
   function handleNewConversation() {
     abortRef.current?.abort();
     hudAbortRef.current?.abort();
+    // Topic shift only: long-term memory stays scoped by X-Hermes-Session-Key.
     setConversation(createConversationName());
     setMessages([]);
-    setHud({ phase: 'idle', message: '새 대화가 시작되었습니다.' });
+    setHud({ phase: 'idle', message: 'New topic started.' });
+    clearHudState();
     setStatus('idle');
     setStatusDetail(undefined);
     lastRenderErrorRef.current = null;
@@ -170,14 +179,63 @@ function ChatApp() {
   const handleToolEvent = useCallback((event: HermesToolEvent) => {
     const toolName = formatToolName(event.name);
     setStatus('tooling');
-    setStatusDetail(event.phase === 'call' ? toolName : `${toolName} 완료`);
+    setStatusDetail(event.phase === 'call' ? toolName : `${toolName} done`);
   }, []);
+
+  async function finishEnvelopeTurn(
+    raw: string,
+    streamedSay: string,
+    controller: AbortController,
+  ) {
+    let result: HudGenerationResult;
+
+    try {
+      const envelope = extractHudEnvelope(raw);
+      assertValidHudEnvelope(envelope);
+      result = { ...envelope, repairCount: 0 };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      result = await repairHudJsx(
+        {
+          say: streamedSay,
+          design: null,
+          live: null,
+          jsx: raw,
+          data: {},
+          repairCount: 0,
+        },
+        message,
+        {
+          signal: controller.signal,
+          conversation: null,
+          store: false,
+          onToolEvent: handleToolEvent,
+        },
+      );
+    }
+
+    if (controller.signal.aborted) return;
+
+    if (result.say) {
+      setMessages((prev) => replaceLastAssistant(prev, result.say));
+    } else if (!streamedSay) {
+      setMessages((prev) => appendToLastAssistant(prev, '(empty response)'));
+    }
+
+    if (result.jsx === null) return;
+
+    setTab('hud');
+    lastRenderErrorRef.current = null;
+    setRenderedHud(result);
+  }
 
   function setRenderedHud(result: HudGenerationResult) {
     if (import.meta.env.DEV && result.design) {
       console.debug('[HUD design]', result.design);
     }
-    setHud(setRenderedHudState(result));
+    const next = setRenderedHudState(result);
+    setHud(next);
+    persistHudState(next);
     syncLiveHudSubscription(result);
   }
 
@@ -192,7 +250,7 @@ function ChatApp() {
       phase: 'generating',
       data: current.data,
       design: current.design,
-      message: `HUD 자기치유 중 (${current.repairCount + 1}/2)`,
+      message: `Repairing HUD (${current.repairCount + 1}/2)`,
       repairCount: current.repairCount,
     });
     setStatus('rendering');
@@ -200,7 +258,8 @@ function ChatApp() {
     try {
       const repaired = await repairHudJsx(current, errorMessage, {
         signal: controller.signal,
-        conversation: hudConversationName(conversation),
+        conversation: null,
+        store: false,
         onToolEvent: handleToolEvent,
       });
       if (controller.signal.aborted) return;
@@ -211,37 +270,6 @@ function ChatApp() {
       if (controller.signal.aborted) return;
       const message = err instanceof Error ? err.message : String(err);
       setRenderedHud(createHudFallback(current.data, message));
-      setStatus('warning');
-    } finally {
-      if (hudAbortRef.current === controller) hudAbortRef.current = null;
-    }
-  }
-
-  async function startHudGeneration(task: string, activeConversation: string) {
-    const controller = new AbortController();
-    hudAbortRef.current?.abort();
-    hudAbortRef.current = controller;
-    lastRenderErrorRef.current = null;
-
-    setHud({ phase: 'generating', message: 'HUD 데이터 준비 중' });
-    setStatus('rendering');
-
-    try {
-      const data = await getHudData(task);
-      setHud({ phase: 'generating', data, message: 'HUD 생성 중' });
-      const result = await generateHudJsx(task, data, {
-        signal: controller.signal,
-        conversation: hudConversationName(activeConversation),
-        onToolEvent: handleToolEvent,
-      });
-      if (controller.signal.aborted) return;
-      setRenderedHud(result);
-      setStatus('idle');
-    } catch (err) {
-      if (controller.signal.aborted) return;
-      const message = err instanceof Error ? err.message : String(err);
-      const data = await getHudData();
-      setRenderedHud(createHudFallback(data, message));
       setStatus('warning');
     } finally {
       if (hudAbortRef.current === controller) hudAbortRef.current = null;
@@ -276,7 +304,8 @@ function ChatApp() {
   function syncLiveHudSubscription(result: HudGenerationResult) {
     unsubscribeLiveHud();
     if (result.jsx === null || !result.live) return;
-    activeLiveSubRef.current = liveHudRef.current?.subscribe(result.live) ?? null;
+    activeLiveSubRef.current =
+      liveHudRef.current?.subscribe(result.live) ?? null;
   }
 
   function unsubscribeLiveHud() {
@@ -291,11 +320,13 @@ function ChatApp() {
     if (message.subId !== activeLiveSubRef.current) return;
     setHud((current) => {
       if (current.phase !== 'rendered' || !current.jsx) return current;
-      return {
+      const next = {
         ...current,
         data: message.data,
-        liveStatus: 'connected',
+        liveStatus: 'connected' as const,
       };
+      persistHudState(next);
+      return next;
     });
   }, []);
 
@@ -304,11 +335,13 @@ function ChatApp() {
     setStatusDetail(reason);
     setHud((current) => {
       if (current.phase !== 'rendered' || !current.data) return current;
-      return {
+      const next = {
         ...current,
-        liveStatus: 'ended',
+        liveStatus: 'ended' as const,
         data: markDataCaution(current.data, reason),
       };
+      persistHudState(next);
+      return next;
     });
   }, []);
 
@@ -322,7 +355,7 @@ function ChatApp() {
   );
 
   useEffect(() => {
-    liveHudRef.current = new LiveHudClient({
+    const client = new LiveHudClient({
       onData: handleLiveHudData,
       onEnd: handleLiveHudEnd,
       onError: (message) => markLiveHudCaution(message),
@@ -335,9 +368,21 @@ function ChatApp() {
         }
       },
     });
+    liveHudRef.current = client;
+
+    const restoredHud = hudRef.current;
+    if (
+      restoredHud.phase === 'rendered' &&
+      restoredHud.jsx &&
+      restoredHud.live
+    ) {
+      activeLiveSubRef.current = client.subscribe(restoredHud.live);
+    }
+
     return () => {
-      liveHudRef.current?.close();
+      client.close();
       liveHudRef.current = null;
+      activeLiveSubRef.current = null;
     };
   }, [handleLiveHudData, handleLiveHudEnd, markLiveHudCaution]);
 
@@ -352,7 +397,7 @@ function ChatApp() {
           aria-selected={tab === 'chat' ? 'true' : 'false'}
           onClick={() => setTab('chat')}
         >
-          대화
+          Chat
         </button>
         <button
           type="button"
@@ -410,11 +455,6 @@ function setRenderedHudState(result: HudGenerationResult): HudRenderState {
   };
 }
 
-/**
- * 마지막 assistant 메시지에 델타를 이어붙인 새 배열을 반환.
- * 메시지 맨 앞의 공백·줄바꿈은 버린다(아직 실내용이 없을 때 들어온 델타는 left-trim).
- * 내부 줄바꿈은 보존한다.
- */
 function appendToLastAssistant(
   prev: DisplayMessage[],
   delta: string,
@@ -431,7 +471,6 @@ function appendToLastAssistant(
   return next;
 }
 
-/** 에러 시, 토큰을 못 받아 비어 있는 마지막 assistant 말풍선을 제거. */
 function dropEmptyTrailingAssistant(prev: DisplayMessage[]): DisplayMessage[] {
   const last = prev[prev.length - 1];
   if (
@@ -459,34 +498,6 @@ function replaceLastAssistant(
   return next;
 }
 
-function shouldBufferPotentialEnvelope(
-  content: string,
-  alreadyBuffering: boolean,
-): boolean {
-  return alreadyBuffering || content.trimStart().startsWith('{');
-}
-
-function extractEnvelopeSay(content: string): string {
-  try {
-    const parsed = JSON.parse(content) as unknown;
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      'say' in parsed &&
-      typeof parsed.say === 'string'
-    ) {
-      return parsed.say;
-    }
-  } catch {
-    return content;
-  }
-  return content;
-}
-
-function hudConversationName(conversation: string): string {
-  return `${conversation}-hud`;
-}
-
 function markDataCaution(
   data: Record<string, unknown>,
   reason: string,
@@ -499,6 +510,14 @@ function markDataCaution(
       reason,
     },
   };
+}
+
+function shouldRotateConversation(messages: DisplayMessage[]): boolean {
+  if (MAX_CONVERSATION_TURNS <= 0) return false;
+  return (
+    messages.filter((message) => message.role === 'user').length >=
+    MAX_CONVERSATION_TURNS
+  );
 }
 
 function loadConversation(): string {
@@ -514,6 +533,48 @@ function loadTranscript(): DisplayMessage[] {
     return parsed.filter(isDisplayMessage);
   } catch {
     return [];
+  }
+}
+
+function loadHudState(): HudRenderState {
+  const raw = readStorage(HUD_STORAGE_KEY);
+  if (!raw) return { phase: 'idle' };
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isPersistedHudState(parsed)) return { phase: 'idle' };
+    return {
+      phase: 'rendered',
+      jsx: parsed.jsx,
+      design: parsed.design,
+      live: parsed.live,
+      data: parsed.data,
+      repairCount: parsed.repairCount,
+      liveStatus: parsed.live ? 'disconnected' : undefined,
+    };
+  } catch {
+    return { phase: 'idle' };
+  }
+}
+
+function persistHudState(hud: HudRenderState): void {
+  if (hud.phase !== 'rendered' || !hud.jsx || !hud.data) return;
+  writeStorage(
+    HUD_STORAGE_KEY,
+    JSON.stringify({
+      jsx: hud.jsx,
+      design: hud.design ?? null,
+      live: hud.live ?? null,
+      data: hud.data,
+      repairCount: hud.repairCount ?? 0,
+    }),
+  );
+}
+
+function clearHudState(): void {
+  try {
+    window.localStorage.removeItem(HUD_STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable in private contexts.
   }
 }
 
@@ -540,6 +601,29 @@ function isDisplayMessage(value: unknown): value is DisplayMessage {
     (candidate.role === 'user' || candidate.role === 'assistant') &&
     typeof candidate.content === 'string'
   );
+}
+
+function isPersistedHudState(value: unknown): value is {
+  jsx: string;
+  design: HudRenderState['design'];
+  live: HudRenderState['live'];
+  data: Record<string, unknown>;
+  repairCount?: number;
+} {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<HudRenderState>;
+  return (
+    typeof candidate.jsx === 'string' &&
+    typeof candidate.data === 'object' &&
+    candidate.data !== null &&
+    !Array.isArray(candidate.data)
+  );
+}
+
+function readTurnLimit(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 40;
+  return Math.floor(parsed);
 }
 
 function formatToolName(name: string): string {
