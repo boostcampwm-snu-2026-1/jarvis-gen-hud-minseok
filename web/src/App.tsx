@@ -116,6 +116,9 @@ function ChatApp() {
   }
 
   const setRenderedHud = useCallback((result: HudGenerationResult) => {
+    if (import.meta.env.DEV && result.design) {
+      console.debug('[HUD design]', result.design);
+    }
     setHud(setRenderedHudState(result));
   }, []);
 
@@ -127,6 +130,7 @@ function ChatApp() {
       setHud({
         phase: 'generating',
         data: current.data,
+        design: current.design,
         message: `HUD 자기치유 중 (${current.repairCount + 1}/2)`,
         repairCount: current.repairCount,
       });
@@ -197,6 +201,7 @@ function ChatApp() {
       void repairRenderedHud(
         {
           say: '',
+          design: current.design ?? null,
           jsx: current.jsx,
           data: current.data,
           repairCount: current.repairCount ?? 0,
@@ -258,6 +263,7 @@ function setRenderedHudState(result: HudGenerationResult): HudRenderState {
     return {
       phase: 'idle',
       data: result.data,
+      design: result.design,
       message: result.say || 'HUD not needed for this request.',
       repairCount: result.repairCount,
     };
@@ -266,6 +272,7 @@ function setRenderedHudState(result: HudGenerationResult): HudRenderState {
   return {
     phase: 'rendered',
     jsx: result.jsx,
+    design: result.design,
     data: result.data,
     repairCount: result.repairCount,
   };

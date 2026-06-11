@@ -10,6 +10,12 @@ test('renders build status HUD from envelope data', async ({ page }) => {
   await mockHermes(page, [
     envelope({
       say: 'Build HUD ready.',
+      design: {
+        data_kind: 'progress/pipeline',
+        primitives: ['Steps', 'ProgressBar'],
+        layout: 'pipeline steps followed by completion meter',
+        why: 'Build status is a pipeline with current completion.',
+      },
       data: {
         build: {
           progress: 74,
@@ -41,6 +47,12 @@ test('renders an invented project HUD from agent-supplied data', async ({ page }
   await mockHermes(page, [
     envelope({
       say: 'Project status ready.',
+      design: {
+        data_kind: 'status/overview',
+        primitives: ['StatusPanel', 'ProgressBar', 'KeyValue', 'Steps'],
+        layout: 'branch status, readiness meter, facts, and worktree steps',
+        why: 'Repository status mixes one headline state with progress and evidence.',
+      },
       data: {
         branch: 'feature/hud-invention',
         progress: 64,
@@ -75,6 +87,12 @@ test('renders disk usage as a pie-style HUD, not a flat table', async ({ page })
   await mockHermes(page, [
     envelope({
       say: 'Disk usage ready.',
+      design: {
+        data_kind: 'breakdown/composition',
+        primitives: ['PieChart', 'ProgressBar', 'KeyValue'],
+        layout: 'composition graphic with usage meter and supporting facts',
+        why: 'Used versus free capacity is a composition, not a plain table.',
+      },
       data: {
         usePct: 14,
         slices: [
@@ -108,6 +126,7 @@ test('does not render HUD when envelope returns jsx null', async ({ page }) => {
   await mockHermes(page, [
     envelope({
       say: 'No visual surface needed.',
+      design: null,
       data: { reason: 'small talk' },
       jsx: null,
     }),
@@ -125,6 +144,12 @@ test('repairs broken JSX without crashing the app', async ({ page }) => {
   await mockHermes(page, [
     envelope({
       say: 'Broken first draft.',
+      design: {
+        data_kind: 'progress/pipeline',
+        primitives: ['Steps'],
+        layout: 'pipeline steps',
+        why: 'Build failures are easiest to scan as steps.',
+      },
       data: {
         build: {
           progress: 74,
@@ -135,6 +160,12 @@ test('repairs broken JSX without crashing the app', async ({ page }) => {
     }),
     envelope({
       say: 'Recovered.',
+      design: {
+        data_kind: 'progress/pipeline',
+        primitives: ['Steps', 'ProgressBar'],
+        layout: 'pipeline steps followed by completion meter',
+        why: 'The repaired HUD preserves build progress and failing step.',
+      },
       data: {
         build: {
           progress: 74,
@@ -161,11 +192,23 @@ test('rejects disallowed raw HTML/style and heals with allowed primitives', asyn
   await mockHermes(page, [
     envelope({
       say: 'Bad draft.',
+      design: {
+        data_kind: 'status/overview',
+        primitives: ['Alert'],
+        layout: 'invalid draft',
+        why: 'This draft intentionally violates render rules.',
+      },
       data: {},
       jsx: '<div style={{ color: "red" }}>bad</div>',
     }),
     envelope({
       say: 'Recovered.',
+      design: {
+        data_kind: 'progress/pipeline',
+        primitives: ['Steps', 'ProgressBar'],
+        layout: 'pipeline steps followed by completion meter',
+        why: 'The repair uses allowed HUD primitives.',
+      },
       data: {
         build: {
           progress: 74,
@@ -216,7 +259,17 @@ async function mockHermes(page: Page, hudResponses: string[]) {
     if (isHudRequest || isRepairRequest) {
       const content =
         hudResponses[Math.min(hudIndex, hudResponses.length - 1)] ??
-        envelope({ say: 'ok', data: {}, jsx: VALID_BUILD_HUD });
+        envelope({
+          say: 'ok',
+          design: {
+            data_kind: 'progress/pipeline',
+            primitives: ['Steps', 'ProgressBar'],
+            layout: 'pipeline fallback',
+            why: 'Default mock HUD mirrors build progress.',
+          },
+          data: {},
+          jsx: VALID_BUILD_HUD,
+        });
       hudIndex += 1;
       await route.fulfill(sse(content));
       return;
@@ -226,7 +279,19 @@ async function mockHermes(page: Page, hudResponses: string[]) {
   });
 }
 
-function envelope(value: { say: string; data: object; jsx: string | null }): string {
+function envelope(value: {
+  say: string;
+  design:
+    | {
+        data_kind: string;
+        primitives: string[];
+        layout: string;
+        why: string;
+      }
+    | null;
+  data: object;
+  jsx: string | null;
+}): string {
   return JSON.stringify(value);
 }
 

@@ -40,12 +40,26 @@ For each user task, use your available terminal/code_execution/file tools to
 collect deterministic data. Do not invent numeric values.
 
 Return JSON only in this exact envelope:
-{"say": string, "data": object, "jsx": string|null}
+{"say": string, "design": object|null, "data": object, "jsx": string|null}
 
 Rules:
 - data must be a compact JSON object derived from tool output.
 - Include data._source when possible: {"tool": string, "command": string, "exitCode": number}.
 - Keep data under 50 KB. Summarize large tool output into compact JSON.
+- Before jsx, fill design = {"data_kind": string, "primitives": string[], "layout": string, "why": string}.
+- design.primitives must contain component names only, such as "Chart" or
+  "ProgressBar"; never include props like "Chart kind=bar" in primitives.
+- Archetype map:
+  progress/pipeline -> Steps + ProgressBar;
+  utilization/capacity -> Gauge + Stat;
+  breakdown/composition -> PieChart + Stat;
+  timeseries/trend -> Chart kind="line" or kind="area";
+  comparison/ranking -> Chart kind="bar";
+  signal/waveform -> Waveform;
+  status/overview -> StatusPanel + Badge + KeyValue.
+- Graphic density: choose 2-3 complementary primitives, lead with a graphic
+  primitive, and use KeyValue only as supporting detail. Avoid repeating the
+  same label-table layout for different tasks.
 - jsx must be constrained JSX using only these components:
   Panel, StatusPanel, ProgressBar, Gauge, PieChart, Stat, Steps, Chart, Waveform, Alert, Badge, KeyValue.
 - Component props:
@@ -73,15 +87,13 @@ Rules:
 - A HUD is not a label table. Do not return a KeyValue-only HUD.
 - For quantitative tasks, include at least one visual primitive:
   PieChart, Gauge, ProgressBar, Chart, Stat, Steps, or StatusPanel. KeyValue may be supporting detail only.
-- For disk, storage, memory, quota, or percentage breakdown tasks, prefer PieChart.
-  Create data.slices as an array and use <PieChart slices={data.slices} />.
 - If a HUD is not useful or data collection fails, set jsx to null and explain in say.
 """.strip()
 
 TASKS = [
     {
         "name": "git_recent_activity",
-        "prompt": f"Show recent git activity for the repository at {ROOT}. Use terminal git log in that path and return a HUD.",
+        "prompt": f"Show recent git activity for the repository at {ROOT}. Use terminal git log in that path, or read .git/logs/HEAD if terminal execution is unavailable, and return a HUD.",
         "expect_hud": True,
     },
     {
@@ -115,6 +127,7 @@ def main() -> int:
                 raise ValueError("Expected a HUD, but Hermes returned jsx:null.")
             if envelope["jsx"] is not None:
                 assert_valid_hud_jsx(envelope["jsx"])
+                assert_design_matches(envelope["design"], envelope["jsx"])
             duration = round(time.time() - started, 2)
             passed += 1
             results.append(
@@ -124,6 +137,7 @@ def main() -> int:
                     "durationSec": duration,
                     "say": envelope["say"],
                     "source": envelope["data"].get("_source"),
+                    "design": envelope.get("design"),
                     "jsx": envelope["jsx"],
                     "dataPreview": preview(envelope["data"]),
                 }
@@ -212,6 +226,18 @@ def validate_envelope(envelope: dict[str, Any]) -> None:
         raise ValueError("Envelope data must be an object.")
     if envelope.get("jsx") is not None and not isinstance(envelope.get("jsx"), str):
         raise ValueError("Envelope jsx must be a string or null.")
+    if envelope.get("jsx") is not None:
+        design = envelope.get("design")
+        if not isinstance(design, dict):
+            raise ValueError("Envelope design must be an object when jsx is present.")
+        if not isinstance(design.get("data_kind"), str):
+            raise ValueError("Envelope design.data_kind must be a string.")
+        if not isinstance(design.get("primitives"), list):
+            raise ValueError("Envelope design.primitives must be an array.")
+        if not isinstance(design.get("layout"), str):
+            raise ValueError("Envelope design.layout must be a string.")
+        if not isinstance(design.get("why"), str):
+            raise ValueError("Envelope design.why must be a string.")
 
 
 def assert_valid_hud_jsx(jsx: str) -> None:
@@ -247,8 +273,34 @@ def assert_valid_hud_jsx(jsx: str) -> None:
         raise ValueError("State props must use stable, info, caution, or critical.")
     if "KeyValue" in components and components.issubset({"Panel", "KeyValue"}):
         raise ValueError("HUD cannot be KeyValue-only.")
-    if re.search(r"\b(disk|storage|drive|quota|memory)\b", trimmed, re.IGNORECASE) and "PieChart" not in components:
-        raise ValueError("Disk/storage HUDs must include PieChart.")
+    visual = {
+        "StatusPanel",
+        "ProgressBar",
+        "Gauge",
+        "PieChart",
+        "Stat",
+        "Steps",
+        "Chart",
+        "Waveform",
+        "Alert",
+    }
+    if not components.intersection(visual):
+        raise ValueError("HUD must include at least one visual primitive.")
+
+
+def assert_design_matches(design: dict[str, Any], jsx: str) -> None:
+    components = {
+        match.group(1)
+        for match in re.finditer(r"</?([A-Z][A-Za-z0-9]*)\b", jsx)
+    }
+    primitives = [item for item in design.get("primitives", []) if isinstance(item, str)]
+    if not primitives:
+        raise ValueError("Design must list at least one primitive.")
+    for primitive in primitives:
+        if primitive not in ALLOWED_COMPONENTS:
+            raise ValueError(f"Design lists disallowed primitive: {primitive}.")
+        if primitive != "Panel" and primitive not in components:
+            raise ValueError(f"Design primitive is missing from JSX: {primitive}.")
 
 
 def preview(value: Any) -> Any:

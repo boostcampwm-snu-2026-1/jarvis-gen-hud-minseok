@@ -21,8 +21,16 @@ const ALLOWED_COMPONENTS = [
 const MAX_REPAIR_ATTEMPTS = 2;
 const MAX_DATA_BYTES = 50_000;
 
+export interface HudDesign {
+  data_kind: string;
+  primitives: string[];
+  layout: string;
+  why: string;
+}
+
 export interface HudEnvelope {
   say: string;
+  design: HudDesign | null;
   data: HudData;
   jsx: string | null;
 }
@@ -37,11 +45,15 @@ export interface GenerateHudOptions {
 
 export const HUD_SYSTEM_PROMPT = [
   'You run a J.A.R.V.I.S HUD agent turn.',
-  'Output JSON only in this exact shape: {"say": string, "data": object, "jsx": string|null}. No markdown.',
+  'Output JSON only in this exact key order: {"say": string, "design": object|null, "data": object, "jsx": string|null}. No markdown.',
   'Use available terminal/code_execution/file tools to collect deterministic data for unfamiliar tasks.',
   'Do not invent or correct numeric values. Put compact tool-derived JSON in data.',
   'When possible, include data._source = { tool, command, exitCode }.',
   'Keep data under 50KB. Summarize large tool output into compact JSON before returning it.',
+  'Before jsx, fill design = { data_kind, primitives, layout, why }. This is your visible design decision record.',
+  'design.primitives must contain component names only, such as "Chart" or "ProgressBar"; never include props like "Chart kind=bar" in primitives.',
+  'Archetype map: progress/pipeline -> Steps + ProgressBar; utilization/capacity -> Gauge + Stat; breakdown/composition -> PieChart + Stat; timeseries/trend -> Chart kind="line" or kind="area"; comparison/ranking -> Chart kind="bar"; signal/waveform -> Waveform; status/overview -> StatusPanel + Badge + KeyValue.',
+  'Graphic density: choose 2-3 complementary primitives, lead with a graphic primitive, and use KeyValue only as supporting detail. Avoid repeating the same label-table layout for different tasks.',
   `Allowed JSX components: ${ALLOWED_COMPONENTS.join(', ')}. Use only these components.`,
   'Component props: Panel title state; ProgressBar value label state showPct; Steps steps; StatusPanel label value state hint; Gauge value min max unit label state; PieChart slices label state; Stat label value unit delta state; Chart kind data unit label state; Waveform samples label state; Alert severity title message; Badge text state; KeyValue items.',
   'Valid state/severity values are only stable, info, caution, critical.',
@@ -50,13 +62,12 @@ export const HUD_SYSTEM_PROMPT = [
   'Numbers and arrays in JSX props must reference data.*. Do not hardcode generated numbers or array literals.',
   'A HUD is not a label table. Do not return a KeyValue-only HUD.',
   'For quantitative tasks, include at least one visual primitive: PieChart, Gauge, ProgressBar, Chart, Stat, Steps, or StatusPanel. KeyValue may be supporting detail only.',
-  'For disk, storage, memory, quota, or percentage breakdown tasks, prefer PieChart. Create data.slices = Array<{ label, value, state }> and use <PieChart slices={data.slices} ... />.',
   'For KeyValue, create data.summaryItems and use <KeyValue items={data.summaryItems} />.',
   'For Steps, create data.steps and use <Steps steps={data.steps} />.',
   'For Chart, create data.chartData and use <Chart data={data.chartData} />.',
   'For PieChart, create data.slices and use <PieChart slices={data.slices} />.',
   'For Waveform, create data.samples and use <Waveform samples={data.samples} />.',
-  'For known build status seed data, return data with the provided build object and use <ProgressBar value={data.build.progress} ... /> and <Steps steps={data.build.steps} />.',
+  'When seed data is already sufficient, pass it through unchanged and choose primitives from the archetype map.',
   'If a HUD is not useful or data collection fails, return jsx:null and explain briefly in say.',
 ].join('\n');
 
@@ -119,6 +130,7 @@ export async function generateHudJsx(
     return repairHudJsx(
       {
         say: '',
+        design: null,
         jsx: raw,
         data: seedData,
         repairCount: 0,
@@ -148,9 +160,10 @@ export async function repairHudJsx(
           `Error: ${errorMessage}`,
           'Previous envelope/JSX:',
           previous.jsx ?? JSON.stringify(previous),
+          `Previous design JSON: ${JSON.stringify(previous.design ?? {})}`,
           describeHudDataShape(previous.data),
           `Available data JSON: ${stringifyForPrompt(previous.data)}`,
-          'Return fixed JSON envelope only. Preserve deterministic data values. Use only allowed components/props and data references.',
+          'Return fixed JSON envelope only. Preserve deterministic data values. Reuse or update design before jsx. Use only allowed components/props and data references.',
         ].join('\n\n'),
       },
     ],
@@ -184,6 +197,12 @@ export function createHudFallback(
 ): HudGenerationResult {
   return {
     say: 'HUD render failed.',
+    design: {
+      data_kind: 'render_error',
+      primitives: ['Alert'],
+      layout: 'single critical fallback panel',
+      why: 'Generated HUD failed validation or runtime rendering.',
+    },
     jsx:
       '<Panel title="HUD fallback" state="critical"><Alert severity="critical" title="HUD render failed" message={data.errorMessage} /></Panel>',
     data: { ...data, errorMessage },
@@ -210,6 +229,7 @@ export function extractHudEnvelope(raw: string): HudEnvelope {
     ) {
       return {
         say: parsed.say,
+        design: normalizeDesign(parsed.design),
         data: capData(parsed.data),
         jsx: typeof parsed.jsx === 'string' ? parsed.jsx.trim() : null,
       };
@@ -217,7 +237,17 @@ export function extractHudEnvelope(raw: string): HudEnvelope {
   }
 
   const jsx = extractHudJsx(trimmed);
-  return { say: '', data: {}, jsx };
+  return {
+    say: '',
+    design: {
+      data_kind: 'legacy_jsx',
+      primitives: inferComponents(jsx).filter((component) => component !== 'Panel'),
+      layout: 'legacy JSX extraction',
+      why: 'Recovered JSX from a non-envelope response.',
+    },
+    data: {},
+    jsx,
+  };
 }
 
 export function extractHudJsx(raw: string): string {
@@ -240,6 +270,7 @@ export function extractHudJsx(raw: string): string {
 export function assertValidHudEnvelope(envelope: HudEnvelope): void {
   capData(envelope.data);
   if (envelope.jsx !== null) {
+    assertValidHudDesign(envelope.design, envelope.jsx);
     assertValidHudJsx(envelope.jsx);
   }
 }
@@ -277,13 +308,7 @@ export function assertValidHudJsx(jsx: string): void {
     throw new Error('HUD state props must be stable, info, caution, or critical.');
   }
 
-  const components = new Set<string>();
-  for (const tag of trimmed.matchAll(/<\/?([A-Z][A-Za-z0-9]*)\b/g)) {
-    components.add(tag[1]);
-    if (!ALLOWED_COMPONENTS.includes(tag[1] as (typeof ALLOWED_COMPONENTS)[number])) {
-      throw new Error(`HUD JSX uses disallowed component: ${tag[1]}.`);
-    }
-  }
+  const components = new Set(inferComponents(trimmed));
 
   if (
     components.has('KeyValue') &&
@@ -293,8 +318,40 @@ export function assertValidHudJsx(jsx: string): void {
       'HUD cannot be KeyValue-only. Add a visual primitive such as PieChart, Gauge, ProgressBar, Chart, Stat, Steps, StatusPanel, or Alert.',
     );
   }
-  if (/\b(disk|storage|drive|quota|memory)\b/i.test(trimmed) && !components.has('PieChart')) {
-    throw new Error('Disk, storage, drive, quota, and memory HUDs must include PieChart.');
+  if (!hasVisualPrimitive(components)) {
+    throw new Error(
+      'HUD must include a visual primitive such as PieChart, Gauge, ProgressBar, Chart, Stat, Steps, StatusPanel, Waveform, or Alert.',
+    );
+  }
+}
+
+function assertValidHudDesign(design: HudDesign | null, jsx: string): void {
+  if (!design) {
+    throw new Error('HUD envelope must include design when jsx is not null.');
+  }
+  if (
+    typeof design.data_kind !== 'string' ||
+    typeof design.layout !== 'string' ||
+    typeof design.why !== 'string' ||
+    !Array.isArray(design.primitives)
+  ) {
+    throw new Error('HUD design must include data_kind, primitives, layout, and why.');
+  }
+
+  const jsxComponents = new Set(inferComponents(jsx));
+  const listed = design.primitives.filter((primitive): primitive is string => {
+    return typeof primitive === 'string' && primitive.length > 0;
+  });
+  if (listed.length === 0) {
+    throw new Error('HUD design must list at least one primitive.');
+  }
+  for (const primitive of listed) {
+    if (!ALLOWED_COMPONENTS.includes(primitive as (typeof ALLOWED_COMPONENTS)[number])) {
+      throw new Error(`HUD design lists disallowed primitive: ${primitive}.`);
+    }
+    if (primitive !== 'Panel' && !jsxComponents.has(primitive)) {
+      throw new Error(`HUD design primitive is missing from JSX: ${primitive}.`);
+    }
   }
 }
 
@@ -349,4 +406,45 @@ function capData(data: HudData): HudData {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeDesign(value: unknown): HudDesign | null {
+  if (value === null || value === undefined) return null;
+  if (!isRecord(value)) return null;
+  return {
+    data_kind: typeof value.data_kind === 'string' ? value.data_kind : '',
+    primitives: Array.isArray(value.primitives) ? value.primitives.filter(isString) : [],
+    layout: typeof value.layout === 'string' ? value.layout : '',
+    why: typeof value.why === 'string' ? value.why : '',
+  };
+}
+
+function inferComponents(jsx: string): string[] {
+  const components: string[] = [];
+  for (const tag of jsx.matchAll(/<\/?([A-Z][A-Za-z0-9]*)\b/g)) {
+    const component = tag[1];
+    if (!ALLOWED_COMPONENTS.includes(component as (typeof ALLOWED_COMPONENTS)[number])) {
+      throw new Error(`HUD JSX uses disallowed component: ${component}.`);
+    }
+    if (!components.includes(component)) components.push(component);
+  }
+  return components;
+}
+
+function hasVisualPrimitive(components: Set<string>): boolean {
+  return [
+    'StatusPanel',
+    'ProgressBar',
+    'Gauge',
+    'PieChart',
+    'Stat',
+    'Steps',
+    'Chart',
+    'Waveform',
+    'Alert',
+  ].some((component) => components.has(component));
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
 }
