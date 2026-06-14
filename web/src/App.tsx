@@ -19,6 +19,7 @@ import { shouldRotateConversation } from './lib/conversationRotation';
 import {
   createConversationName,
   streamResponse,
+  streamUsher,
   type HermesToolEvent,
 } from './lib/hermes';
 import {
@@ -60,6 +61,7 @@ function ChatApp() {
   const [hud, setHud] = useState<HudRenderState>(loadHudState);
   const abortRef = useRef<AbortController | null>(null);
   const hudAbortRef = useRef<AbortController | null>(null);
+  const usherAbortRef = useRef<AbortController | null>(null);
   const liveHudRef = useRef<LiveHudClient | null>(null);
   const activeLiveSubRef = useRef<string | null>(null);
   const hudRef = useRef<HudRenderState>(hud);
@@ -107,6 +109,40 @@ function ChatApp() {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    const usherController = new AbortController();
+    usherAbortRef.current = usherController;
+
+    // 본 답변(메인)이 자기 텍스트를 내기 시작하면 즉답을 멈추고 교체한다.
+    const mainTookOver = { current: false };
+    let usherText = '';
+
+    // 즉답(usher): 본 답변과 병렬로, 자비스 한 문장 선응답을 즉시 흘린다.
+    // best-effort — 실패하거나 느려도 본 답변엔 영향 없음.
+    const usherTask = (async () => {
+      try {
+        for await (const delta of streamUsher(text, {
+          signal: usherController.signal,
+        })) {
+          if (mainTookOver.current || usherController.signal.aborted || !delta) {
+            continue;
+          }
+          usherText += delta;
+          setMessages((prev) => setLastAssistant(prev, usherText, true));
+        }
+      } catch {
+        // 즉답은 임계경로가 아니다. 조용히 무시.
+      }
+    })();
+
+    const takeOverFromUsher = () => {
+      if (mainTookOver.current) {
+        return;
+      }
+      mainTookOver.current = true;
+      usherController.abort();
+      // 즉답 라인을 비우고 본 say를 처음부터 흘린다.
+      setMessages((prev) => setLastAssistant(prev, '', false));
+    };
 
     try {
       let received = false;
@@ -123,6 +159,9 @@ function ChatApp() {
         const parsed = parser.push(delta);
 
         if (parsed.text) {
+          if (!streamedText) {
+            takeOverFromUsher();
+          }
           streamedText = true;
           setMessages((prev) => appendToLastAssistant(prev, parsed.text));
         }
@@ -133,21 +172,49 @@ function ChatApp() {
         }
       }
 
+      // 메인 종료. 교체된 경우 즉답을 끊고, 아니면 즉답이 한 문장을 끝내게 둔다.
+      if (mainTookOver.current) {
+        usherController.abort();
+      }
+      await usherTask;
+
       if (!received) {
-        setMessages((prev) => appendToLastAssistant(prev, '(empty response)'));
+        // 본 답변이 비었으면 즉답이라도 확정 라인으로 남긴다.
+        if (usherText.trim()) {
+          setMessages((prev) => setLastAssistant(prev, usherText, false));
+        } else {
+          setMessages((prev) =>
+            appendToLastAssistant(prev, '(empty response)'),
+          );
+        }
       } else {
         const finished = parser.finish();
         if (finished.isEnvelope) {
-          await finishEnvelopeTurn(finished.raw, finished.say, controller);
-        } else if (!streamedText && finished.raw) {
-          setMessages((prev) => appendToLastAssistant(prev, finished.raw));
+          await finishEnvelopeTurn(
+            finished.raw,
+            finished.say,
+            controller,
+            usherText,
+          );
+        } else if (!streamedText) {
+          // 비-envelope인데 스트리밍된 본문이 없음(공백뿐 등). 즉답이 있으면
+          // 그대로 확정 라인으로 남기고, 없으면 raw나 빈 응답을 표시(pending 해제).
+          const fallback = usherText.trim()
+            ? usherText
+            : finished.raw.trim()
+              ? finished.raw
+              : '(empty response)';
+          setMessages((prev) => setLastAssistant(prev, fallback, false));
         }
       }
 
       setStatus('idle');
       setStatusDetail(undefined);
     } catch (err) {
+      usherController.abort();
       if (controller.signal.aborted) {
+        // 중단(stop/새 대화)으로 끊김 — 즉답 잠정 라인이 남아 있으면 확정 처리.
+        setMessages((prev) => clearPending(prev));
         setStatus('idle');
         setStatusDetail(undefined);
       } else {
@@ -160,14 +227,20 @@ function ChatApp() {
         setStatusDetail(undefined);
       }
     } finally {
+      usherController.abort();
+      await usherTask;
       setStreaming(false);
       abortRef.current = null;
+      if (usherAbortRef.current === usherController) {
+        usherAbortRef.current = null;
+      }
     }
   }
 
   function handleStop() {
     abortRef.current?.abort();
     hudAbortRef.current?.abort();
+    usherAbortRef.current?.abort();
     setStatusDetail(undefined);
     setHud((current) =>
       current.phase === 'generating'
@@ -179,6 +252,7 @@ function ChatApp() {
   function handleNewConversation() {
     abortRef.current?.abort();
     hudAbortRef.current?.abort();
+    usherAbortRef.current?.abort();
     // Topic shift only: long-term memory stays scoped by X-Hermes-Session-Key.
     setConversation(createConversationName());
     setMessages([]);
@@ -201,6 +275,7 @@ function ChatApp() {
     raw: string,
     streamedSay: string,
     controller: AbortController,
+    ackText: string,
   ) {
     let result: HudGenerationResult;
 
@@ -232,8 +307,14 @@ function ChatApp() {
     if (controller.signal.aborted) return;
 
     if (result.say) {
-      setMessages((prev) => replaceLastAssistant(prev, result.say));
-    } else if (!streamedSay) {
+      setMessages((prev) => setLastAssistant(prev, result.say, false));
+    } else if (streamedSay) {
+      // 스트리밍된 say가 이미 버블에 있음 — 잠정 표시만 해제.
+      setMessages((prev) => setLastAssistant(prev, streamedSay, false));
+    } else if (ackText.trim()) {
+      // 본 say가 없음(HUD 전용 등) — 즉답을 확정 라인으로 남긴다.
+      setMessages((prev) => setLastAssistant(prev, ackText, false));
+    } else {
       setMessages((prev) => appendToLastAssistant(prev, '(empty response)'));
     }
 
@@ -505,14 +586,37 @@ function dropEmptyTrailingAssistant(prev: DisplayMessage[]): DisplayMessage[] {
   return prev;
 }
 
-function replaceLastAssistant(
+/**
+ * 마지막 (비-에러) assistant 메시지의 내용을 통째로 교체하고 잠정(pending)
+ * 표시를 설정한다. 즉답(usher)을 흘릴 땐 pending=true, 본 답변으로 확정할 땐
+ * pending=false. append와 달리 누적이 아니라 치환이라 즉답→본답변 교체에 쓴다.
+ */
+function setLastAssistant(
   prev: DisplayMessage[],
   content: string,
+  pending: boolean,
 ): DisplayMessage[] {
   const next = prev.slice();
   for (let i = next.length - 1; i >= 0; i--) {
     if (next[i].role === 'assistant' && !next[i].isError) {
-      next[i] = { ...next[i], content };
+      next[i] = { ...next[i], content, pending };
+      break;
+    }
+  }
+  return next;
+}
+
+/**
+ * 마지막 (비-에러) assistant 메시지의 잠정(pending) 표시만 해제한다(내용 보존).
+ * 이미 스트리밍된 본문은 그대로 두고 즉답 스타일(이탤릭·dim)만 확정으로 바꾼다.
+ * 이미 확정 상태면 같은 배열 참조를 돌려줘 불필요한 리렌더를 피한다.
+ */
+function clearPending(prev: DisplayMessage[]): DisplayMessage[] {
+  const next = prev.slice();
+  for (let i = next.length - 1; i >= 0; i--) {
+    if (next[i].role === 'assistant' && !next[i].isError) {
+      if (!next[i].pending) return prev;
+      next[i] = { ...next[i], pending: false };
       break;
     }
   }
@@ -548,7 +652,10 @@ function loadTranscript(): DisplayMessage[] {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isDisplayMessage);
+    // 잠정(pending) 표시는 스트리밍 중 한정 상태 — 복원 시 항상 확정으로 둔다.
+    return parsed
+      .filter(isDisplayMessage)
+      .map((message) => ({ ...message, pending: false }));
   } catch {
     return [];
   }
