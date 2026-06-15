@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { State, StepStatus } from './types';
+import { formatNumber, formatTick } from './format';
 
 export interface PanelProps {
   title?: string;
@@ -84,8 +85,37 @@ export interface KeyValueProps {
   data?: { k?: string; v?: string; label?: string; value?: string }[];
 }
 
+export interface RadialMeterProps {
+  value?: number;
+  max?: number;
+  label?: string;
+  unit?: string;
+  state?: State;
+}
+
+export interface SparklineProps {
+  samples?: number[];
+  data?: number[];
+  label?: string;
+  state?: State;
+}
+
+export interface RadialBreakdownItem {
+  label?: string;
+  value?: number;
+  state?: State;
+}
+
+export interface RadialBreakdownProps {
+  items?: RadialBreakdownItem[];
+  data?: RadialBreakdownItem[];
+  label?: string;
+  unit?: string;
+  state?: State;
+}
+
 const DEFAULT_STATE: State = 'info';
-const SERIES_PALETTE_SIZE = 5;
+const CAT_PALETTE_SIZE = 8;
 
 type PieSlice = {
   label?: string;
@@ -173,6 +203,10 @@ export function Gauge({
   return (
     <div className={`hud-gauge hud-state-${state}`}>
       <svg viewBox="0 0 120 120" role="img" aria-label={label}>
+        <g className="hud-gauge-rings" aria-hidden="true">
+          <circle className="hud-gauge-ring" cx="60" cy="60" r="30" />
+          <circle className="hud-gauge-ring" cx="60" cy="60" r="18" />
+        </g>
         <g className="hud-gauge-ticks" aria-hidden="true">
           {gaugeTicks(16).map((tick) => (
             <line
@@ -203,7 +237,7 @@ export function Gauge({
         />
       </svg>
       <div className="hud-gauge-readout">
-        <span>{displayValue}</span>
+        <span>{formatNumber(displayValue)}</span>
         {unit && <small>{unit}</small>}
       </div>
       {label && <div className="hud-label">{label}</div>}
@@ -226,11 +260,12 @@ export function PieChart({
     .filter((slice) => slice.value > 0)
     // State colors carry meaning (caution/critical are warnings), so slices
     // without an explicit state get a neutral series palette instead.
+    // 상태가 명시되면 의미색(state), 아니면 비의미 categorical 팔레트(--cat-*).
     .map((slice, index) => ({
       ...slice,
       tone: slice.state
         ? `hud-state-${slice.state}`
-        : `hud-series-${index % SERIES_PALETTE_SIZE}`,
+        : `hud-cat-${index % CAT_PALETTE_SIZE}`,
     }));
   const total = safeSlices.reduce((sum, slice) => sum + slice.value, 0);
   const radius = 38;
@@ -280,7 +315,7 @@ export function PieChart({
           ))}
           <circle className="hud-pie-core" cx="60" cy="60" r="24" />
           <text className="hud-pie-total" x="60" y="62">
-            {safeSlices.length}
+            {formatNumber(total)}
           </text>
         </svg>
         <dl className="hud-pie-legend">
@@ -312,13 +347,13 @@ export function Stat({
     <div className={`hud-stat hud-state-${state}`}>
       <div className="hud-label">{label}</div>
       <div className="hud-stat-value">
-        <span>{value}</span>
+        <span>{formatNumber(value)}</span>
         {unit && <small>{unit}</small>}
       </div>
       {numericDelta !== undefined && (
         <div className={`hud-delta ${numericDelta >= 0 ? 'is-up' : 'is-down'}`}>
           {numericDelta >= 0 ? '+' : ''}
-          {numericDelta}
+          {formatNumber(numericDelta)}
         </div>
       )}
     </div>
@@ -341,7 +376,12 @@ export function Steps({ steps, items, data }: StepsProps) {
         return (
           <li key={`${index}-${name}`} className={`is-${status}`}>
             <span className="hud-step-dot" aria-hidden="true" />
-            <span>{name}</span>
+            <span className="hud-step-body">
+              <span>{name}</span>
+              {step.description && (
+                <span className="hud-step-desc">{step.description}</span>
+              )}
+            </span>
           </li>
         );
       })}
@@ -359,7 +399,16 @@ export function Chart({
 }: ChartProps) {
   const entries = asArray(data ?? pointData);
   const points = chartPoints(entries);
-  const baselineY = chartBaselineY(entries.map((point) => point.y));
+  const yns = entries.map((point) => point.y).filter((y) => Number.isFinite(y));
+  const yMin = yns.length ? Math.min(...yns) : 0;
+  const yMax = yns.length ? Math.max(...yns) : 0;
+  const baselineY = chartBaselineY(yns);
+  // 촘촘한 스펙트럼은 마커가 "구슬 목걸이"로 라인을 덮는다 → 마커를 끄고,
+  // line이면 보조 area를 깔아 가독성을 살린다(kind는 존중).
+  const dense = points.length > 24;
+  const showMarkers = kind !== 'bar' && !dense;
+  const showArea = kind === 'area' || (kind === 'line' && dense);
+  const midIndex = Math.floor((entries.length - 1) / 2);
 
   return (
     <div className={`hud-chart hud-state-${state}`}>
@@ -379,7 +428,7 @@ export function Chart({
             points.map((point, index) => (
               <rect
                 key={`${point.x}-${point.y}-${index}`}
-                className="hud-chart-bar"
+                className={`hud-chart-bar hud-heat-${heatIndex(entries[index]?.y, yMin, yMax)}`}
                 x={point.x - point.barWidth / 2}
                 y={Math.min(point.y, baselineY)}
                 width={point.barWidth}
@@ -389,32 +438,47 @@ export function Chart({
             ))
           ) : (
             <>
-              {kind === 'area' && (
+              {showArea && (
                 <path
                   className="hud-chart-area"
                   d={`${linePath(points)} L ${points[points.length - 1].x} 72 L ${points[0].x} 72 Z`}
                 />
               )}
               <path className="hud-chart-line" d={linePath(points)} />
-              <g className="hud-chart-points">
-                {points.map((point, index) => (
-                  <circle
-                    key={`${point.x}-${point.y}-${index}`}
-                    cx={point.x}
-                    cy={point.y}
-                    r="2.4"
-                  />
-                ))}
-              </g>
+              {showMarkers && (
+                <g className="hud-chart-points">
+                  {points.map((point, index) => (
+                    <circle
+                      key={`${point.x}-${point.y}-${index}`}
+                      cx={point.x}
+                      cy={point.y}
+                      r="2.4"
+                    />
+                  ))}
+                </g>
+              )}
             </>
           )}
+          <g className="hud-chart-ylabels" aria-hidden="true">
+            <text x="10" y="13">
+              {formatTick(yMax)}
+            </text>
+            <text x="10" y="62">
+              {formatTick(yMin)}
+            </text>
+          </g>
           <g className="hud-chart-xlabels" aria-hidden="true">
             <text x="8" y="71">
-              {String(entries[0].x)}
+              {formatTick(entries[0].x)}
             </text>
+            {entries.length > 2 && (
+              <text x="80" y="71" textAnchor="middle">
+                {formatTick(entries[midIndex].x)}
+              </text>
+            )}
             {entries.length > 1 && (
               <text x="152" y="71" textAnchor="end">
-                {String(entries[entries.length - 1].x)}
+                {formatTick(entries[entries.length - 1].x)}
               </text>
             )}
           </g>
@@ -473,10 +537,194 @@ export function KeyValue({ items, data }: KeyValueProps) {
       {safeItems.map((item, index) => (
         <div key={`${index}-${item.k ?? item.label}`}>
           <dt>{item.k ?? item.label}</dt>
-          <dd>{item.v ?? item.value}</dd>
+          <dd>{formatNumber(item.v ?? item.value)}</dd>
         </div>
       ))}
     </dl>
+  );
+}
+
+/**
+ * RadialMeter — 동심 레이더 KPI. 단일 핵심 수치 + 맥락("47 INCIDENTS").
+ * 중앙 readout = value, 링 채움 = value/max. 손 SVG(동심 틱 링 + 진행 아크).
+ */
+export function RadialMeter({
+  value,
+  max = 100,
+  label,
+  unit,
+  state = DEFAULT_STATE,
+}: RadialMeterProps) {
+  const current = Number.isFinite(value) ? Number(value) : 0;
+  const safeMax = Number.isFinite(max) && Number(max) > 0 ? Number(max) : 100;
+  const pct = clamp(current / safeMax, 0, 1);
+  const radius = 44;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - pct);
+
+  return (
+    <div className={`hud-radial hud-state-${state}`}>
+      <svg viewBox="0 0 120 120" role="img" aria-label={label}>
+        <g className="hud-radial-rings" aria-hidden="true">
+          <circle cx="60" cy="60" r="52" />
+          <circle cx="60" cy="60" r="34" />
+        </g>
+        <g className="hud-radial-ticks" aria-hidden="true">
+          {gaugeTicks(24).map((tick) => (
+            <line
+              key={tick.index}
+              className={tick.major ? 'is-major' : undefined}
+              x1={tick.x1}
+              y1={tick.y1}
+              x2={tick.x2}
+              y2={tick.y2}
+            />
+          ))}
+        </g>
+        <circle className="hud-radial-track" cx="60" cy="60" r={radius} />
+        <circle
+          className="hud-radial-fill"
+          cx="60"
+          cy="60"
+          r={radius}
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={dashOffset}
+        />
+      </svg>
+      <div className="hud-radial-readout">
+        <span className="hud-radial-value">{formatNumber(current)}</span>
+        {unit && <small>{unit}</small>}
+      </div>
+      {label && <div className="hud-label hud-radial-label">{label}</div>}
+    </div>
+  );
+}
+
+/**
+ * Sparkline — 인라인 미니 트렌드(축·마커 없음). 스탯 행/타일 옆 작은 추세.
+ * Waveform에서 chrome을 제거한 판. samples = data.*.
+ */
+export function Sparkline({
+  samples,
+  data,
+  label,
+  state = DEFAULT_STATE,
+}: SparklineProps) {
+  const points = sparkPoints(asArray(samples ?? data));
+
+  return (
+    <div className={`hud-sparkline hud-state-${state}`}>
+      {label && <span className="hud-label">{label}</span>}
+      {points ? (
+        <svg
+          viewBox="0 0 120 28"
+          role="img"
+          aria-label={label}
+          preserveAspectRatio="none"
+        >
+          <polyline className="hud-sparkline-line" points={points} />
+        </svg>
+      ) : (
+        <div className="hud-empty">No samples</div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * RadialBreakdown — 허브 둘레 카테고리 스포크(ATT&CK 룩) + 중앙 합계.
+ * 스포크 길이 = 값, 색은 state가 있으면 의미색, 없으면 categorical(--cat-*).
+ */
+export function RadialBreakdown({
+  items,
+  data,
+  label,
+  unit,
+  state = DEFAULT_STATE,
+}: RadialBreakdownProps) {
+  const entries = asArray(items ?? data).map((item, index) => ({
+    label: item.label ?? `Item ${index + 1}`,
+    value: Number.isFinite(item.value) ? Number(item.value) : 0,
+    state: item.state,
+  }));
+
+  if (entries.length === 0) {
+    return <div className="hud-empty">No items</div>;
+  }
+
+  const total = entries.reduce((sum, item) => sum + item.value, 0);
+  const maxValue = Math.max(...entries.map((item) => item.value), 0) || 1;
+  const cx = 100;
+  const cy = 100;
+  const minR = 28;
+  const maxR = 70;
+
+  const spokes = entries.map((item, index) => {
+    const angle = ((index / entries.length) * 360 - 90) * (Math.PI / 180);
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const length = minR + (item.value / maxValue) * (maxR - minR);
+    const tone = item.state
+      ? `hud-state-${item.state}`
+      : `hud-cat-${index % CAT_PALETTE_SIZE}`;
+    const anchor: 'start' | 'middle' | 'end' =
+      cos > 0.33 ? 'start' : cos < -0.33 ? 'end' : 'middle';
+    return {
+      label: item.label,
+      value: item.value,
+      tone,
+      anchor,
+      ex: cx + cos * length,
+      ey: cy + sin * length,
+      lx: cx + cos * (maxR + 12),
+      ly: cy + sin * (maxR + 12),
+    };
+  });
+
+  return (
+    <div className={`hud-radial-breakdown hud-state-${state}`}>
+      {label && <div className="hud-label">{label}</div>}
+      <svg viewBox="0 0 200 200" role="img" aria-label={label}>
+        <g className="hud-rb-rings" aria-hidden="true">
+          <circle cx={cx} cy={cy} r={maxR} />
+          <circle cx={cx} cy={cy} r={(minR + maxR) / 2} />
+        </g>
+        {spokes.map((spoke, index) => (
+          <g
+            key={`${index}-${spoke.label}`}
+            className={`hud-rb-spoke ${spoke.tone}`}
+          >
+            <line x1={cx} y1={cy} x2={spoke.ex} y2={spoke.ey} />
+            <circle cx={spoke.ex} cy={spoke.ey} r="3.4" />
+            <text
+              className="hud-rb-label"
+              x={spoke.lx}
+              y={spoke.ly}
+              textAnchor={spoke.anchor}
+            >
+              {spoke.label}
+            </text>
+            <text
+              className="hud-rb-value"
+              x={spoke.lx}
+              y={spoke.ly + 9}
+              textAnchor={spoke.anchor}
+            >
+              {formatNumber(spoke.value)}
+            </text>
+          </g>
+        ))}
+        <circle className="hud-rb-core" cx={cx} cy={cy} r={minR - 6} />
+        <text className="hud-rb-total" x={cx} y={unit ? cy - 2 : cy}>
+          {formatNumber(total)}
+        </text>
+        {unit && (
+          <text className="hud-rb-unit" x={cx} y={cy + 11}>
+            {unit}
+          </text>
+        )}
+      </svg>
+    </div>
   );
 }
 
@@ -525,6 +773,15 @@ function chartBaselineY(values: number[]): number {
   if (min >= 0) return 64;
   if (max <= 0) return 8;
   return 64 - ((0 - min) / (max - min)) * 56;
+}
+
+/** 값을 0..4 sequential 램프 인덱스로(heat 막대 색). 범위 0이면 중간. */
+function heatIndex(value: number | undefined, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || max <= min) {
+    return 2;
+  }
+  const normalized = (value - min) / (max - min);
+  return Math.max(0, Math.min(4, Math.round(normalized * 4)));
 }
 
 function gaugeTicks(count: number): {
@@ -583,6 +840,21 @@ function waveformPoints(samples: number[]): string | undefined {
       const x = step * index;
       const y = 28 - (sample / max) * 22;
       return `${x},${y}`;
+    })
+    .join(' ');
+}
+
+function sparkPoints(samples: number[]): string | undefined {
+  if (samples.length === 0) return undefined;
+  const max = Math.max(...samples);
+  const min = Math.min(...samples);
+  const range = max - min || 1;
+  const step = samples.length === 1 ? 0 : 120 / (samples.length - 1);
+  return samples
+    .map((sample, index) => {
+      const x = step * index;
+      const y = 26 - ((sample - min) / range) * 24;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(' ');
 }

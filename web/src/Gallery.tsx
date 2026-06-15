@@ -5,7 +5,11 @@ import {
   Gauge,
   KeyValue,
   Panel,
+  PieChart,
   ProgressBar,
+  RadialBreakdown,
+  RadialMeter,
+  Sparkline,
   Stat,
   StatusPanel,
   Steps,
@@ -62,6 +66,63 @@ const waveformSamples = [
   0.2, 0.7, -0.35, 0.15,
 ];
 
+// 촘촘한 도플러 스펙트럼(96 bin) — 정제 전엔 점 마커가 라인을 덮어 "구슬
+// 목걸이"가 됐다. 결정적(no random) 데이터라 스냅샷/스크린샷 안정.
+const denseSpectrum = Array.from({ length: 96 }, (_, i) => {
+  const freq = Number((i * 0.0125).toFixed(4));
+  const peakA = Math.exp(-((i - 28) ** 2) / 50) * 0.85;
+  const peakB = Math.exp(-((i - 66) ** 2) / 24) * 0.55;
+  const floor = 0.04 + 0.02 * Math.sin(i / 3);
+  return { x: freq, y: Number((peakA + peakB + floor).toFixed(4)) };
+});
+
+const toolSteps = [
+  { name: 'terminal', status: 'done' as const, description: 'df -h /' },
+  {
+    name: 'code_execution',
+    status: 'done' as const,
+    description: '{"path":"/","usedPct":1.2}',
+  },
+  { name: 'file', status: 'active' as const, description: 'reading package.json' },
+];
+
+const repoSlices = [
+  { label: 'src', value: 48 },
+  { label: 'tests', value: 22 },
+  { label: 'docs', value: 14 },
+  { label: 'config', value: 9 },
+];
+
+// Tier 1: heat 막대(값→--seq-*)와 categorical 분해(--cat-*) — 상태색과 별개 축.
+const heatBars = [
+  { x: 'init', y: 12 },
+  { x: 'recon', y: 47 },
+  { x: 'exploit', y: 88 },
+  { x: 'c2', y: 63 },
+  { x: 'exfil', y: 100 },
+];
+
+const attackCategories = [
+  { label: 'Initial Access', value: 8 },
+  { label: 'Execution', value: 14 },
+  { label: 'Persistence', value: 5 },
+  { label: 'Lateral Move', value: 11 },
+  { label: 'Exfiltration', value: 3 },
+  { label: 'Impact', value: 6 },
+];
+
+// Tier 2 신규 프리미티브 픽스처.
+const sensorTrend = [3, 5, 4, 8, 6, 9, 7, 11, 9, 12];
+
+const tacticBreakdown = [
+  { label: 'Initial Access', value: 8 },
+  { label: 'Execution', value: 14 },
+  { label: 'Persistence', value: 5 },
+  { label: 'Priv Esc', value: 7 },
+  { label: 'Lateral', value: 11 },
+  { label: 'Exfiltration', value: 3, state: 'critical' as const },
+];
+
 export function Gallery() {
   return (
     <div className="gallery-shell">
@@ -81,6 +142,155 @@ export function Gallery() {
       </header>
 
       <main className="gallery-main">
+        <section className="gallery-state-section">
+          <div className="gallery-section-head">
+            <Badge text="refinement" state="info" />
+            <span>
+              밀도 처리·축 라벨·숫자 포맷·Steps description·PieChart 총합
+            </span>
+          </div>
+
+          <div className="hud-grid">
+            <Panel title="Dense Doppler Spectrum (96 pt)" state="info" span={2}>
+              <Chart
+                kind="line"
+                data={denseSpectrum}
+                unit="mag"
+                label="Range-Doppler bin magnitude"
+                state="info"
+              />
+            </Panel>
+
+            <Panel title="Steps + detail" state="info">
+              <Steps steps={toolSteps} />
+            </Panel>
+
+            <Panel title="PieChart (center = total)" state="info">
+              <PieChart
+                slices={repoSlices}
+                label="Repo composition"
+                state="info"
+              />
+            </Panel>
+          </div>
+        </section>
+
+        <section className="gallery-state-section">
+          <div className="gallery-section-head">
+            <Badge text="tier 1" state="info" />
+            <span>
+              비의미 팔레트: heat 막대(--seq-*) · categorical 파이(--cat-*) ·
+              레이더 게이지
+            </span>
+          </div>
+
+          <div className="hud-grid">
+            <Panel title="Heat bars (값 → seq 램프)" state="info" span={2}>
+              <Chart
+                kind="bar"
+                data={heatBars}
+                unit="score"
+                label="Kill-chain stage intensity"
+                state="info"
+              />
+            </Panel>
+
+            <Panel title="Categorical breakdown" state="info">
+              <PieChart
+                slices={attackCategories}
+                label="Tactic categories"
+                state="info"
+              />
+            </Panel>
+
+            <Panel title="Radar gauge" state="info">
+              <Gauge
+                label="Signal"
+                value={73}
+                min={0}
+                max={100}
+                unit="%"
+                state="info"
+              />
+            </Panel>
+          </div>
+        </section>
+
+        <section className="gallery-state-section">
+          <div className="gallery-section-head">
+            <Badge text="tier 2" state="info" />
+            <span>신규 프리미티브: RadialMeter · Sparkline · RadialBreakdown</span>
+          </div>
+
+          <div className="hud-grid">
+            <Panel title="RadialMeter (단일 KPI)" state="info">
+              <RadialMeter
+                value={47}
+                max={60}
+                unit="incidents"
+                label="Open incidents"
+                state="caution"
+              />
+            </Panel>
+
+            <Panel title="Sparkline (인라인 추세)" state="info">
+              <Stat label="Detections / hr" value={12} state="info" />
+              <Sparkline samples={sensorTrend} label="last 10h" state="info" />
+            </Panel>
+
+            <Panel title="RadialBreakdown (카테고리 스포크)" state="info">
+              <RadialBreakdown
+                items={tacticBreakdown}
+                label="Tactic categories"
+                unit="alerts"
+                state="info"
+              />
+            </Panel>
+          </div>
+        </section>
+
+        <section className="gallery-state-section">
+          <div className="gallery-section-head">
+            <Badge text="composite" state="info" />
+            <span>레퍼런스풍 SOC 합성 — 재해석(복제 아님), 토큰·프리미티브만</span>
+          </div>
+
+          <div className="hud-grid">
+            <Panel title="ACTIVE INCIDENTS" state="caution">
+              <RadialMeter
+                value={47}
+                max={60}
+                unit="incidents"
+                label="Active"
+                state="caution"
+              />
+            </Panel>
+
+            <Panel title="TACTIC BREAKDOWN" state="info" span={2}>
+              <RadialBreakdown
+                items={tacticBreakdown}
+                label="By tactic"
+                state="info"
+              />
+            </Panel>
+
+            <Panel title="KILL-CHAIN INTENSITY" state="info" span={2}>
+              <Chart
+                kind="bar"
+                data={heatBars}
+                unit="score"
+                label="Stage intensity (heat)"
+                state="info"
+              />
+            </Panel>
+
+            <Panel title="DETECTION TREND" state="info">
+              <Stat label="Detections / hr" value={12} delta={4} state="info" />
+              <Sparkline samples={sensorTrend} label="10h" state="info" />
+            </Panel>
+          </div>
+        </section>
+
         {STATES.map((state) => (
           <section key={state} className="gallery-state-section">
             <div className="gallery-section-head">
