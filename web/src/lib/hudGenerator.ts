@@ -28,6 +28,21 @@ const ALLOWED_COMPONENTS = [
 const MAX_REPAIR_ATTEMPTS = 2;
 const MAX_DATA_BYTES = 50_000;
 
+// Steps/KeyValue는 텍스트 리스트라 "그래픽/지표 lead" 판정에서 제외한다(anti-plain).
+const GRAPHIC_OR_METRIC = new Set([
+  'StatusPanel',
+  'ProgressBar',
+  'Gauge',
+  'PieChart',
+  'Stat',
+  'Chart',
+  'Waveform',
+  'Alert',
+  'RadialMeter',
+  'RadialBreakdown',
+  'Sparkline',
+]);
+
 export interface HudDesign {
   data_kind: string;
   primitives: string[];
@@ -70,7 +85,7 @@ export const HUD_SYSTEM_PROMPT = [
   'When live is non-null, JSX may only reference keys that the selected source will push. Exact schemas: disk -> {path,totalBytes,usedBytes,freeBytes,usedPct,min,max,state,summaryItems,slices,_source}; project -> {root,branch,changedFiles,stagedFiles,unstagedFiles,untrackedFiles,files,summaryItems,_source}; build_sim -> {startedAt,elapsedSec,progress,state,steps,summaryItems,_source}; proc_watch -> {pid,running,state,summaryItems,_source}.',
   'For live disk HUDs, use value={data.usedPct}, min={data.min}, max={data.max}, slices={data.slices}, and items={data.summaryItems}; do not invent aliases such as used_percent or free_pct.',
   'design.primitives must contain component names only, such as "Chart" or "ProgressBar"; never include props like "Chart kind=bar" in primitives.',
-  'Archetype map: progress/pipeline -> Steps + ProgressBar; utilization/capacity -> Gauge + Stat; breakdown/composition -> PieChart + Stat; timeseries/trend -> Chart kind="line" or kind="area"; comparison/ranking -> Chart kind="bar"; signal/waveform -> Waveform; status/overview -> StatusPanel + Badge + KeyValue; single headline KPI -> RadialMeter; category-around-hub (e.g. ATT&CK tactics, incident categories) -> RadialBreakdown; inline mini-trend beside a stat -> Sparkline.',
+  'Archetype map: process/pipeline status -> status-colored Steps (per-step state + description) + one summary metric (RadialMeter/Stat/ProgressBar), never a Chart of step indices; utilization/capacity -> Gauge + Stat; breakdown/composition -> PieChart or RadialBreakdown + Stat; timeseries/trend -> Chart kind="line" or kind="area"; comparison/ranking -> Chart kind="bar"; signal/waveform -> Waveform; status/overview -> StatusPanel + Badge + KeyValue; single headline KPI -> RadialMeter; category-around-hub (e.g. ATT&CK tactics, incident categories) -> RadialBreakdown; inline mini-trend beside a stat -> Sparkline.',
   'Graphic density: choose 2-3 complementary primitives, lead with a graphic primitive, and use KeyValue only as supporting detail. Avoid repeating the same label-table layout for different tasks.',
   `Allowed JSX components: ${ALLOWED_COMPONENTS.join(', ')}. Use only these components.`,
   'Component props: Panel title state; ProgressBar value label state showPct; Steps steps; StatusPanel label value state hint; Gauge value min max unit label state; PieChart slices label state; Stat label value unit delta state; Chart kind data unit label state; Waveform samples label state; Alert severity title message; Badge text state; KeyValue items; RadialMeter value max unit label state; Sparkline samples label state; RadialBreakdown items label unit state.',
@@ -79,10 +94,13 @@ export const HUD_SYSTEM_PROMPT = [
   'Top-level JSX must be exactly one <Panel>...</Panel> when jsx is not null.',
   'Numbers and arrays in JSX props must reference data.*. Do not hardcode generated numbers or array literals.',
   'Color is automatic from design tokens. Use state only to signal genuine status. Do NOT use state to convey magnitude or category: heat intensity (Chart kind="bar") and categorical series (PieChart, RadialBreakdown) are colored automatically by non-semantic palettes. Set state on a slice/item only when it carries real status.',
-  'A HUD is not a label table. Do not return a KeyValue-only HUD.',
+  'A HUD is not a label table. Text lists (Steps and/or KeyValue) must not be the entire HUD — lead with at least one graphic or metric primitive (Chart, Gauge, PieChart, RadialMeter, RadialBreakdown, Sparkline, ProgressBar, Stat, StatusPanel, Waveform).',
+  'Chart and Waveform are for quantitative series only. Never plot ordinal/index sequences (step numbers, list positions, 1..N) — that yields a meaningless flat line. For progress use RadialMeter or Stat (e.g. "7/9 stages active"); for category status use RadialBreakdown.',
+  'Never render the same dataset through multiple primitives. Show a list once as Steps (per-item status + description) plus at most one summary graphic — not the same list repeated as Steps AND Chart AND KeyValue.',
+  'When list items carry status, set each Steps step status (done / active / caution for partial / pending for not-yet / failed) so the timeline is multi-colored and meaningful — never leave a multi-status list single-colored. Put per-step detail in the step description, not a parallel KeyValue.',
   'For quantitative tasks, include at least one visual primitive: PieChart, Gauge, RadialMeter, RadialBreakdown, Sparkline, ProgressBar, Chart, Stat, Steps, or StatusPanel. KeyValue may be supporting detail only.',
   'For KeyValue, create data.summaryItems and use <KeyValue items={data.summaryItems} />.',
-  'For Steps, create data.steps and use <Steps steps={data.steps} />.',
+  'For Steps, create data.steps where each step is {name, status, description?}; assign status per item and put detail in description (no parallel KeyValue duplicating it).',
   'For Chart, create data.chartData and use <Chart data={data.chartData} />.',
   'For PieChart, create data.slices and use <PieChart slices={data.slices} />.',
   'For Waveform, create data.samples and use <Waveform samples={data.samples} />.',
@@ -315,6 +333,17 @@ export function assertValidHudJsx(jsx: string): void {
   if (!hasVisualPrimitive(components)) {
     throw new Error(
       'HUD must include a visual primitive such as PieChart, Gauge, ProgressBar, Chart, Stat, Steps, StatusPanel, Waveform, or Alert.',
+    );
+  }
+  // Anti-plain: 텍스트 리스트(Steps/KeyValue)만으로 구성된 HUD는 확장된
+  // label-table다. 최소 1개 graphic/metric 프리미티브를 lead로 두게 강제.
+  const nonPanel = [...components].filter((component) => component !== 'Panel');
+  if (
+    nonPanel.length > 0 &&
+    !nonPanel.some((component) => GRAPHIC_OR_METRIC.has(component))
+  ) {
+    throw new Error(
+      'HUD cannot be text-list-only (Steps/KeyValue). Lead with a graphic or metric primitive such as Chart, Gauge, PieChart, RadialMeter, RadialBreakdown, Sparkline, Stat, StatusPanel, ProgressBar, or Waveform.',
     );
   }
 }

@@ -123,6 +123,17 @@ const tacticBreakdown = [
   { label: 'Exfiltration', value: 3, state: 'critical' as const },
 ];
 
+// Tier 0 anti-plain: 파이프라인은 상태색 Steps(+설명) + 요약 지표 1개로.
+// (같은 리스트를 Chart/KeyValue로 중복하거나 단계 인덱스를 차트로 그리지 않는다.)
+const pipelineSteps = [
+  { name: 'Ingest', status: 'done' as const, description: 'STFT 512pt @ 16kHz' },
+  { name: 'Window', status: 'done' as const, description: 'Hann, 50% overlap' },
+  { name: 'FFT', status: 'done' as const, description: 'rFFT magnitude' },
+  { name: 'Denoise', status: 'active' as const, description: 'spectral subtraction' },
+  { name: 'Feature', status: 'caution' as const, description: 'partial: MFCC only' },
+  { name: 'Classify', status: 'pending' as const, description: 'model not wired' },
+];
+
 export function Gallery() {
   return (
     <div className="gallery-shell">
@@ -245,6 +256,29 @@ export function Gallery() {
                 unit="alerts"
                 state="info"
               />
+            </Panel>
+          </div>
+        </section>
+
+        <section className="gallery-state-section">
+          <div className="gallery-section-head">
+            <Badge text="anti-plain" state="info" />
+            <span>
+              프로세스/파이프라인: 상태색 Steps(+설명) + 요약 지표 1개 (중복
+              list·ordinal Chart 금지)
+            </span>
+          </div>
+
+          <div className="hud-grid">
+            <Panel title="Signal Pipeline" state="info" span={2}>
+              <RadialMeter
+                value={4}
+                max={6}
+                unit="stages"
+                label="Active / total"
+                state="info"
+              />
+              <Steps steps={pipelineSteps} />
             </Panel>
           </div>
         </section>

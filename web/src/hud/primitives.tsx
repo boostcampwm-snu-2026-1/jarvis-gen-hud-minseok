@@ -866,9 +866,14 @@ function asArray<T>(value: T[] | undefined): T[] {
 function normalizeStepStatus(status: StepItem['status'] | StepItem['state']): StepStatus {
   if (status === 'stable') return 'done';
   if (status === 'info') return 'active';
-  if (status === 'caution') return 'active';
+  if (status === 'caution') return 'caution';
   if (status === 'critical') return 'failed';
-  if (status === 'done' || status === 'active' || status === 'pending' || status === 'failed') {
+  if (
+    status === 'done' ||
+    status === 'active' ||
+    status === 'pending' ||
+    status === 'failed'
+  ) {
     return status;
   }
   return 'pending';

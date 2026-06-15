@@ -23,6 +23,13 @@ describe('HUD_SYSTEM_PROMPT', () => {
       'proc_watch -> {pid,running,state,summaryItems,_source}',
     );
   });
+
+  it('encodes the anti-plain composition rules (Tier 0)', () => {
+    expect(HUD_SYSTEM_PROMPT).toMatch(/ordinal\/index sequences/i);
+    expect(HUD_SYSTEM_PROMPT).toMatch(/status-colored Steps/i);
+    expect(HUD_SYSTEM_PROMPT).toMatch(/Never render the same dataset/i);
+    expect(HUD_SYSTEM_PROMPT).toMatch(/Text lists \(Steps and\/or KeyValue\)/i);
+  });
 });
 
 describe('extractHudEnvelope', () => {
@@ -289,5 +296,31 @@ describe('assertValidHudJsx', () => {
         '<Panel title="x" state="info"><RadialMeter value={42} max={data.max} /></Panel>',
       ),
     ).toThrow(/deterministic data/);
+  });
+
+  it('rejects text-list-only HUDs (Steps/KeyValue without a graphic lead)', () => {
+    expect(() =>
+      assertValidHudJsx(
+        '<Panel title="Pipe" state="info"><Steps steps={data.steps} /><KeyValue items={data.summaryItems} /></Panel>',
+      ),
+    ).toThrow(/text-list-only/);
+    expect(() =>
+      assertValidHudJsx(
+        '<Panel title="Pipe" state="info"><Steps steps={data.steps} /></Panel>',
+      ),
+    ).toThrow(/text-list-only/);
+  });
+
+  it('allows Steps when led by a metric/graphic primitive', () => {
+    expect(() =>
+      assertValidHudJsx(
+        '<Panel title="Pipe" state="info"><RadialMeter value={data.active} max={data.total} label="active" /><Steps steps={data.steps} /></Panel>',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertValidHudJsx(
+        '<Panel title="Pipe" state="info"><Stat label="Stages" value={data.active} state="info" /><Steps steps={data.steps} /></Panel>',
+      ),
+    ).not.toThrow();
   });
 });

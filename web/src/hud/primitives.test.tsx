@@ -231,6 +231,15 @@ describe('HUD primitive refinement', () => {
     expect(screen.getByText('df -h /')).toBeInTheDocument();
   });
 
+  it('Steps는 caution(partial) 상태를 별도 색(is-caution)으로 렌더한다', () => {
+    const { container } = render(
+      <Steps
+        steps={[{ name: 'feature', status: 'caution', description: 'MFCC only' }]}
+      />,
+    );
+    expect(container.querySelector('.hud-steps .is-caution')).not.toBeNull();
+  });
+
   it('PieChart 중앙은 슬라이스 개수가 아니라 총합 값을 표시한다', () => {
     render(
       <PieChart

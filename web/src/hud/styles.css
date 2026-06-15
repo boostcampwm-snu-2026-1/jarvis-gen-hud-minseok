@@ -553,6 +553,10 @@
   color: var(--state-info);
 }
 
+.hud-steps .is-caution {
+  color: var(--state-caution);
+}
+
 .hud-steps .is-failed {
   color: var(--state-critical);
 }
@@ -577,6 +581,13 @@
   box-shadow:
     0 0 0 3px var(--surface-2),
     0 0 12px var(--state-critical);
+}
+
+.hud-steps .is-caution .hud-step-dot {
+  background: var(--state-caution);
+  box-shadow:
+    0 0 0 3px var(--surface-2),
+    0 0 12px var(--state-caution);
 }
 
 .hud-chart,
