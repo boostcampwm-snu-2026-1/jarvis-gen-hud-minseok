@@ -2,9 +2,10 @@ import type { HudData } from './hudData';
 import { describeHudDataShape } from './hudData';
 import { streamResponse, type HermesToolEvent } from './hermes';
 import {
-  LIVE_HUD_SOURCES,
+  BUILTIN_LIVE_SOURCE_DESCRIPTORS,
   normalizeLiveHudSpec,
   type LiveHudSpec,
+  type LiveSourceDescriptor,
 } from './liveHud';
 
 const ALLOWED_COMPONENTS = [
@@ -69,7 +70,32 @@ export interface GenerateHudOptions {
   onToolEvent?: (event: HermesToolEvent) => void;
 }
 
-export const HUD_SYSTEM_PROMPT = [
+// Live-source guidance is assembled from descriptors so dynamically-added
+// sources (backend manifests, surfaced via /sources) get the model the exact
+// keys to reference — preventing the HUD from blanking on the first live tick.
+function liveSourceLines(descriptors: LiveSourceDescriptor[]): string[] {
+  const ids = descriptors.map((d) => d.id).join(', ');
+  const guide = descriptors.map((d) => `${d.id} -> ${d.description}`).join('; ');
+  const schemas = descriptors
+    .map((d) => `${d.id} -> {${d.outputSchema.join(',')}}`)
+    .join('; ');
+  return [
+    `If the HUD should keep updating without another LLM call, set live = { source, params, intervalMs }. Allowed live sources: ${ids}. Otherwise set live:null.`,
+    `Live source guide: ${guide}.`,
+    `When live is non-null, JSX may only reference keys that the selected source will push. Exact schemas: ${schemas}.`,
+    'For live disk HUDs, use value={data.usedPct}, min={data.min}, max={data.max}, slices={data.slices}, and items={data.summaryItems}; do not invent aliases such as used_percent or free_pct.',
+  ];
+}
+
+/**
+ * Assemble the HUD system prompt. The live-source section is derived from
+ * `descriptors` (defaults to the builtin set so the exported constant and any
+ * orchestrator-down fallback stay valid).
+ */
+export function buildHudSystemPrompt(
+  descriptors: LiveSourceDescriptor[] = BUILTIN_LIVE_SOURCE_DESCRIPTORS,
+): string {
+  return [
   'You run one unified J.A.R.V.I.S response turn for this local frontend workspace.',
   `When the user refers to this project, repo, app, or workspace, use this project root: ${__JARVIS_PROJECT_ROOT__}.`,
   'Do not silently switch to the Hermes server working directory for project-local questions.',
@@ -80,10 +106,7 @@ export const HUD_SYSTEM_PROMPT = [
   'When possible, include data._source = { tool, command, exitCode }.',
   'Keep data under 50KB. Summarize large tool output into compact JSON before returning it.',
   'Before jsx, fill design = { data_kind, primitives, layout, why }. This is your visible design decision record.',
-  `If the HUD should keep updating without another LLM call, set live = { source, params, intervalMs }. Allowed live sources: ${LIVE_HUD_SOURCES.join(', ')}. Otherwise set live:null.`,
-  'Live source guide: disk -> path capacity data for Gauge/PieChart; project -> git status; build_sim -> simulated build Steps/ProgressBar; proc_watch -> manual PID polling.',
-  'When live is non-null, JSX may only reference keys that the selected source will push. Exact schemas: disk -> {path,totalBytes,usedBytes,freeBytes,usedPct,min,max,state,summaryItems,slices,_source}; project -> {root,branch,changedFiles,stagedFiles,unstagedFiles,untrackedFiles,files,summaryItems,_source}; build_sim -> {startedAt,elapsedSec,progress,state,steps,summaryItems,_source}; proc_watch -> {pid,running,state,summaryItems,_source}.',
-  'For live disk HUDs, use value={data.usedPct}, min={data.min}, max={data.max}, slices={data.slices}, and items={data.summaryItems}; do not invent aliases such as used_percent or free_pct.',
+  ...liveSourceLines(descriptors),
   'design.primitives must contain component names only, such as "Chart" or "ProgressBar"; never include props like "Chart kind=bar" in primitives.',
   'Archetype map: process/pipeline status -> status-colored Steps (per-step state + description) + one summary metric (RadialMeter/Stat/ProgressBar), never a Chart of step indices; utilization/capacity -> Gauge + Stat; breakdown/composition -> PieChart or RadialBreakdown + Stat; timeseries/trend -> Chart kind="line" or kind="area"; comparison/ranking -> Chart kind="bar"; signal/waveform -> Waveform; status/overview -> StatusPanel + Badge + KeyValue; single headline KPI -> RadialMeter; category-around-hub (e.g. ATT&CK tactics, incident categories) -> RadialBreakdown; inline mini-trend beside a stat -> Sparkline.',
   'Graphic density: choose 2-3 complementary primitives, lead with a graphic primitive, and use KeyValue only as supporting detail. Avoid repeating the same label-table layout for different tasks.',
@@ -109,7 +132,12 @@ export const HUD_SYSTEM_PROMPT = [
   'For RadialBreakdown, create data.items (each {label, value, state?}) and use <RadialBreakdown items={data.items} />.',
   'When seed data is already sufficient, pass it through unchanged and choose primitives from the archetype map.',
   'If a HUD is not useful or data collection fails, return jsx:null and explain briefly in say.',
-].join('\n');
+  ].join('\n');
+}
+
+// Builtin/fallback prompt. App rebuilds this from /sources at startup so dynamic
+// sources are advertised; this constant keeps the orchestrator-down path valid.
+export const HUD_SYSTEM_PROMPT = buildHudSystemPrompt();
 
 export async function repairHudJsx(
   previous: HudGenerationResult,

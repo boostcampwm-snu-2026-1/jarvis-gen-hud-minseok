@@ -8,6 +8,7 @@ import { Gallery } from './Gallery';
 import {
   assertValidHudEnvelope,
   assertValidHudJsx,
+  buildHudSystemPrompt,
   createHudFallback,
   extractHudEnvelope,
   HUD_SYSTEM_PROMPT,
@@ -23,6 +24,8 @@ import {
 } from './lib/hermes';
 import {
   LiveHudClient,
+  loadLiveSources,
+  setLiveHudSources,
   type LiveHudDataMessage,
   type LiveHudEndMessage,
 } from './lib/liveHud';
@@ -65,10 +68,25 @@ function ChatApp() {
   const hudRef = useRef<HudRenderState>(hud);
   const lastRenderErrorRef = useRef<string | null>(null);
   const lastLivePersistRef = useRef(0);
+  // System prompt starts from the builtin fallback and is rebuilt from /sources
+  // so the model is told about dynamically-registered live sources and schemas.
+  const systemPromptRef = useRef(HUD_SYSTEM_PROMPT);
 
   useEffect(() => {
     hudRef.current = hud;
   }, [hud]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadLiveSources().then((descriptors) => {
+      if (cancelled) return;
+      setLiveHudSources(descriptors.map((descriptor) => descriptor.id));
+      systemPromptRef.current = buildHudSystemPrompt(descriptors);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     writeStorage(CONVERSATION_STORAGE_KEY, conversation);
@@ -116,7 +134,7 @@ function ChatApp() {
 
       for await (const delta of streamResponse(text, activeConversation, {
         signal: controller.signal,
-        instructions: HUD_SYSTEM_PROMPT,
+        instructions: systemPromptRef.current,
         onToolEvent: handleToolEvent,
       })) {
         received = true;

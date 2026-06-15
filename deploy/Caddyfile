@@ -32,6 +32,11 @@
 		reverse_proxy orchestrator:8765
 	}
 
+	# /sources → 오케스트레이터 live source descriptor 목록(프론트 allow-list/프롬프트가 파생).
+	handle /sources {
+		reverse_proxy orchestrator:8765
+	}
+
 	# (M5) 음성 서비스 WebSocket이 생기면 여기에 추가:
 	# handle /voice/* {
 	#     reverse_proxy 127.0.0.1:<VOICE_PORT>
