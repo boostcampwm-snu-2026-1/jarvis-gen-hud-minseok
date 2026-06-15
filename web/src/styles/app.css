@@ -271,6 +271,9 @@ body {
 
 .hud-live-frame {
   animation: hudFadeIn var(--dur) var(--ease);
+  /* 샌드박스 iframe 기본 배경은 흰색이다. 콘텐츠가 못 채운 영역(최소 높이·
+     리사이즈 전환 중)이 흰 여백으로 보이지 않게 패널 표면색으로 받쳐 둔다. */
+  background: var(--surface);
   border: 0;
   display: block;
   inline-size: 100%;

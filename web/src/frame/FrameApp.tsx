@@ -58,9 +58,12 @@ export function FrameApp() {
 
   useEffect(() => {
     const observer = new ResizeObserver(() => {
+      // body.scrollHeight(콘텐츠 높이)를 보고한다. documentElement.scrollHeight는
+      // iframe 뷰포트 높이로 floor돼 한 번 커지면 줄지 않는 ratchet이 생겨,
+      // 콘텐츠보다 큰 iframe 아래에 흰 여백이 남는다.
       post({
         type: 'hud:size',
-        height: document.documentElement.scrollHeight,
+        height: document.body.scrollHeight,
       });
     });
     observer.observe(document.body);
