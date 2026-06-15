@@ -5,6 +5,7 @@ import {
   Gauge,
   KeyValue,
   Panel,
+  PieChart,
   ProgressBar,
   Stat,
   StatusPanel,
@@ -62,6 +63,33 @@ const waveformSamples = [
   0.2, 0.7, -0.35, 0.15,
 ];
 
+// 촘촘한 도플러 스펙트럼(96 bin) — 정제 전엔 점 마커가 라인을 덮어 "구슬
+// 목걸이"가 됐다. 결정적(no random) 데이터라 스냅샷/스크린샷 안정.
+const denseSpectrum = Array.from({ length: 96 }, (_, i) => {
+  const freq = Number((i * 0.0125).toFixed(4));
+  const peakA = Math.exp(-((i - 28) ** 2) / 50) * 0.85;
+  const peakB = Math.exp(-((i - 66) ** 2) / 24) * 0.55;
+  const floor = 0.04 + 0.02 * Math.sin(i / 3);
+  return { x: freq, y: Number((peakA + peakB + floor).toFixed(4)) };
+});
+
+const toolSteps = [
+  { name: 'terminal', status: 'done' as const, description: 'df -h /' },
+  {
+    name: 'code_execution',
+    status: 'done' as const,
+    description: '{"path":"/","usedPct":1.2}',
+  },
+  { name: 'file', status: 'active' as const, description: 'reading package.json' },
+];
+
+const repoSlices = [
+  { label: 'src', value: 48 },
+  { label: 'tests', value: 22 },
+  { label: 'docs', value: 14 },
+  { label: 'config', value: 9 },
+];
+
 export function Gallery() {
   return (
     <div className="gallery-shell">
@@ -81,6 +109,39 @@ export function Gallery() {
       </header>
 
       <main className="gallery-main">
+        <section className="gallery-state-section">
+          <div className="gallery-section-head">
+            <Badge text="refinement" state="info" />
+            <span>
+              밀도 처리·축 라벨·숫자 포맷·Steps description·PieChart 총합
+            </span>
+          </div>
+
+          <div className="hud-grid">
+            <Panel title="Dense Doppler Spectrum (96 pt)" state="info" span={2}>
+              <Chart
+                kind="line"
+                data={denseSpectrum}
+                unit="mag"
+                label="Range-Doppler bin magnitude"
+                state="info"
+              />
+            </Panel>
+
+            <Panel title="Steps + detail" state="info">
+              <Steps steps={toolSteps} />
+            </Panel>
+
+            <Panel title="PieChart (center = total)" state="info">
+              <PieChart
+                slices={repoSlices}
+                label="Repo composition"
+                state="info"
+              />
+            </Panel>
+          </div>
+        </section>
+
         {STATES.map((state) => (
           <section key={state} className="gallery-state-section">
             <div className="gallery-section-head">

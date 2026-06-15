@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { State, StepStatus } from './types';
+import { formatNumber, formatTick } from './format';
 
 export interface PanelProps {
   title?: string;
@@ -203,7 +204,7 @@ export function Gauge({
         />
       </svg>
       <div className="hud-gauge-readout">
-        <span>{displayValue}</span>
+        <span>{formatNumber(displayValue)}</span>
         {unit && <small>{unit}</small>}
       </div>
       {label && <div className="hud-label">{label}</div>}
@@ -280,7 +281,7 @@ export function PieChart({
           ))}
           <circle className="hud-pie-core" cx="60" cy="60" r="24" />
           <text className="hud-pie-total" x="60" y="62">
-            {safeSlices.length}
+            {formatNumber(total)}
           </text>
         </svg>
         <dl className="hud-pie-legend">
@@ -312,13 +313,13 @@ export function Stat({
     <div className={`hud-stat hud-state-${state}`}>
       <div className="hud-label">{label}</div>
       <div className="hud-stat-value">
-        <span>{value}</span>
+        <span>{formatNumber(value)}</span>
         {unit && <small>{unit}</small>}
       </div>
       {numericDelta !== undefined && (
         <div className={`hud-delta ${numericDelta >= 0 ? 'is-up' : 'is-down'}`}>
           {numericDelta >= 0 ? '+' : ''}
-          {numericDelta}
+          {formatNumber(numericDelta)}
         </div>
       )}
     </div>
@@ -341,7 +342,12 @@ export function Steps({ steps, items, data }: StepsProps) {
         return (
           <li key={`${index}-${name}`} className={`is-${status}`}>
             <span className="hud-step-dot" aria-hidden="true" />
-            <span>{name}</span>
+            <span className="hud-step-body">
+              <span>{name}</span>
+              {step.description && (
+                <span className="hud-step-desc">{step.description}</span>
+              )}
+            </span>
           </li>
         );
       })}
@@ -359,7 +365,16 @@ export function Chart({
 }: ChartProps) {
   const entries = asArray(data ?? pointData);
   const points = chartPoints(entries);
-  const baselineY = chartBaselineY(entries.map((point) => point.y));
+  const yns = entries.map((point) => point.y).filter((y) => Number.isFinite(y));
+  const yMin = yns.length ? Math.min(...yns) : 0;
+  const yMax = yns.length ? Math.max(...yns) : 0;
+  const baselineY = chartBaselineY(yns);
+  // 촘촘한 스펙트럼은 마커가 "구슬 목걸이"로 라인을 덮는다 → 마커를 끄고,
+  // line이면 보조 area를 깔아 가독성을 살린다(kind는 존중).
+  const dense = points.length > 24;
+  const showMarkers = kind !== 'bar' && !dense;
+  const showArea = kind === 'area' || (kind === 'line' && dense);
+  const midIndex = Math.floor((entries.length - 1) / 2);
 
   return (
     <div className={`hud-chart hud-state-${state}`}>
@@ -389,32 +404,47 @@ export function Chart({
             ))
           ) : (
             <>
-              {kind === 'area' && (
+              {showArea && (
                 <path
                   className="hud-chart-area"
                   d={`${linePath(points)} L ${points[points.length - 1].x} 72 L ${points[0].x} 72 Z`}
                 />
               )}
               <path className="hud-chart-line" d={linePath(points)} />
-              <g className="hud-chart-points">
-                {points.map((point, index) => (
-                  <circle
-                    key={`${point.x}-${point.y}-${index}`}
-                    cx={point.x}
-                    cy={point.y}
-                    r="2.4"
-                  />
-                ))}
-              </g>
+              {showMarkers && (
+                <g className="hud-chart-points">
+                  {points.map((point, index) => (
+                    <circle
+                      key={`${point.x}-${point.y}-${index}`}
+                      cx={point.x}
+                      cy={point.y}
+                      r="2.4"
+                    />
+                  ))}
+                </g>
+              )}
             </>
           )}
+          <g className="hud-chart-ylabels" aria-hidden="true">
+            <text x="10" y="13">
+              {formatTick(yMax)}
+            </text>
+            <text x="10" y="62">
+              {formatTick(yMin)}
+            </text>
+          </g>
           <g className="hud-chart-xlabels" aria-hidden="true">
             <text x="8" y="71">
-              {String(entries[0].x)}
+              {formatTick(entries[0].x)}
             </text>
+            {entries.length > 2 && (
+              <text x="80" y="71" textAnchor="middle">
+                {formatTick(entries[midIndex].x)}
+              </text>
+            )}
             {entries.length > 1 && (
               <text x="152" y="71" textAnchor="end">
-                {String(entries[entries.length - 1].x)}
+                {formatTick(entries[entries.length - 1].x)}
               </text>
             )}
           </g>
@@ -473,7 +503,7 @@ export function KeyValue({ items, data }: KeyValueProps) {
       {safeItems.map((item, index) => (
         <div key={`${index}-${item.k ?? item.label}`}>
           <dt>{item.k ?? item.label}</dt>
-          <dd>{item.v ?? item.value}</dd>
+          <dd>{formatNumber(item.v ?? item.value)}</dd>
         </div>
       ))}
     </dl>

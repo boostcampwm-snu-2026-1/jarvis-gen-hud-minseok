@@ -12,6 +12,7 @@ import {
   Steps,
   Waveform,
 } from './primitives';
+import { formatNumber, formatTick } from './format';
 
 describe('HUD primitives', () => {
   it('renders empty states instead of throwing when generated props are missing', () => {
@@ -162,5 +163,80 @@ describe('HUD primitives', () => {
 
     expect(screen.getAllByText('Retry')).toHaveLength(2);
     expect(screen.getAllByText('misc')).toHaveLength(2);
+  });
+});
+
+describe('HUD primitive refinement', () => {
+  it('formatNumber: 끝 0 제거·유효숫자 캡·비유한값/문자열 안전', () => {
+    expect(formatNumber(0)).toBe('0');
+    expect(formatNumber(42)).toBe('42');
+    expect(formatNumber(1234.5678)).toBe('1235');
+    expect(formatNumber(0.49219, 3)).toBe('0.492');
+    expect(formatNumber(0.000123)).toBe('1.23e-4');
+    expect(formatNumber(Number.NaN)).toBe('');
+    expect(formatNumber('137 GB')).toBe('137 GB');
+  });
+
+  it('formatTick: 숫자는 짧게, 카테고리 문자열은 그대로', () => {
+    expect(formatTick(0.49219)).toBe('0.492');
+    expect(formatTick('10:30')).toBe('10:30');
+  });
+
+  it('촘촘한 스펙트럼 Chart는 마커를 숨기고 라인/area만 그린다', () => {
+    const dense = Array.from({ length: 64 }, (_, i) => ({
+      x: i,
+      y: Math.sin(i / 4),
+    }));
+    const { container } = render(<Chart kind="line" data={dense} />);
+    expect(container.querySelectorAll('.hud-chart-points circle')).toHaveLength(
+      0,
+    );
+    expect(container.querySelector('.hud-chart-line')).not.toBeNull();
+    expect(container.querySelector('.hud-chart-area')).not.toBeNull();
+  });
+
+  it('포인트가 적으면 마커를 유지한다', () => {
+    const sparse = [
+      { x: 0, y: 1 },
+      { x: 1, y: 3 },
+      { x: 2, y: 2 },
+    ];
+    const { container } = render(<Chart kind="line" data={sparse} />);
+    expect(container.querySelectorAll('.hud-chart-points circle')).toHaveLength(
+      3,
+    );
+  });
+
+  it('Chart 축 라벨은 raw float가 아니라 formatTick로 표시한다', () => {
+    render(
+      <Chart
+        kind="line"
+        data={[
+          { x: 0.49219, y: 0.1 },
+          { x: 0.5, y: 0.9 },
+        ]}
+      />,
+    );
+    expect(screen.getByText('0.492')).toBeInTheDocument();
+  });
+
+  it('Steps는 description을 2차 라인으로 렌더한다', () => {
+    render(
+      <Steps steps={[{ name: 'scan', status: 'active', description: 'df -h /' }]} />,
+    );
+    expect(screen.getByText('scan')).toBeInTheDocument();
+    expect(screen.getByText('df -h /')).toBeInTheDocument();
+  });
+
+  it('PieChart 중앙은 슬라이스 개수가 아니라 총합 값을 표시한다', () => {
+    render(
+      <PieChart
+        slices={[
+          { label: 'a', value: 30 },
+          { label: 'b', value: 70 },
+        ]}
+      />,
+    );
+    expect(screen.getByText('100')).toBeInTheDocument();
   });
 });
