@@ -2,7 +2,6 @@ import type { JarvisStatus } from '../types';
 
 const LABELS: Record<JarvisStatus, string> = {
   idle: '대기',
-  listening: '청취',
   thinking: '사고',
   caution: '주의',
   tooling: '도구 실행 중',

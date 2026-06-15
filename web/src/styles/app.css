@@ -410,12 +410,6 @@ body {
   opacity: 0.4;
   cursor: not-allowed;
 }
-.input-bar .mic {
-  background: var(--surface-2);
-  color: var(--text-mid);
-  width: 44px;
-  padding: 0;
-}
 .input-bar .new-conversation {
   background: var(--surface-2);
   color: var(--text-mid);

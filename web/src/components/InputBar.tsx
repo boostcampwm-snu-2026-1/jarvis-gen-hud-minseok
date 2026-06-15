@@ -10,7 +10,7 @@ interface Props {
   onNewConversation: () => void;
 }
 
-/** 하단 입력 바 — 텍스트(우선) + 마이크 버튼(M5까지 자리만, 비활성). */
+/** 하단 입력 바 — 텍스트 명령 입력 + 새 대화/전송. */
 export function InputBar({
   canSend,
   streaming,
@@ -37,15 +37,6 @@ export function InputBar({
         disabled={streaming}
       >
         새 대화
-      </button>
-      <button
-        type="button"
-        className="mic"
-        disabled
-        title="음성 입력 (M5)"
-        aria-label="음성 입력 (준비 중)"
-      >
-        🎤
       </button>
       <input
         type="text"

@@ -374,7 +374,7 @@ export function Gallery() {
               <Panel title="Waveform" state={state}>
                 <Waveform
                   samples={waveformSamples}
-                  label="Voice envelope"
+                  label="Signal envelope"
                   state={state}
                 />
               </Panel>
