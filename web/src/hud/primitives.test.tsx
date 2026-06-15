@@ -8,6 +8,9 @@ import {
   KeyValue,
   PieChart,
   ProgressBar,
+  RadialBreakdown,
+  RadialMeter,
+  Sparkline,
   Stat,
   Steps,
   Waveform,
@@ -275,5 +278,67 @@ describe('HUD Tier1 — 비의미 색 팔레트(색축 보호)', () => {
     expect(segments[0].getAttribute('class')).toContain('hud-state-critical');
     expect(segments[0].getAttribute('class')).not.toMatch(/hud-cat-/);
     expect(segments[1].getAttribute('class')).toContain('hud-cat-');
+  });
+});
+
+describe('HUD Tier2 — RadialMeter / Sparkline / RadialBreakdown', () => {
+  it('RadialMeter: 중앙 value·unit·label을 표시한다', () => {
+    render(
+      <RadialMeter value={47} max={100} unit="incidents" label="Open incidents" />,
+    );
+    expect(screen.getByText('47')).toBeInTheDocument();
+    expect(screen.getByText('incidents')).toBeInTheDocument();
+    expect(screen.getByText('Open incidents')).toBeInTheDocument();
+  });
+
+  it('Sparkline: samples로 폴리라인을 그리고, 비면 No samples', () => {
+    const { container, rerender } = render(
+      <Sparkline samples={[1, 3, 2, 5, 4]} />,
+    );
+    expect(container.querySelector('.hud-sparkline-line')).not.toBeNull();
+    rerender(<Sparkline samples={[]} />);
+    expect(screen.getByText('No samples')).toBeInTheDocument();
+  });
+
+  it('RadialBreakdown: 라벨·값·중앙 합계를 렌더하고 무상태는 categorical 색', () => {
+    const { container } = render(
+      <RadialBreakdown
+        items={[
+          { label: 'Initial Access', value: 8 },
+          { label: 'Execution', value: 14 },
+        ]}
+      />,
+    );
+    expect(screen.getByText('Initial Access')).toBeInTheDocument();
+    expect(screen.getByText('14')).toBeInTheDocument();
+    expect(screen.getByText('22')).toBeInTheDocument(); // 중앙 합계
+    const spokes = container.querySelectorAll('.hud-rb-spoke');
+    expect(spokes).toHaveLength(2);
+    expect(spokes[0].getAttribute('class')).toContain('hud-cat-');
+  });
+
+  it('RadialBreakdown: state가 있는 항목은 의미색(state)을 쓴다', () => {
+    const { container } = render(
+      <RadialBreakdown
+        items={[
+          { label: 'crit', value: 5, state: 'critical' },
+          { label: 'ok', value: 2 },
+        ]}
+      />,
+    );
+    const spokes = container.querySelectorAll('.hud-rb-spoke');
+    expect(spokes[0].getAttribute('class')).toContain('hud-state-critical');
+    expect(spokes[1].getAttribute('class')).toContain('hud-cat-');
+  });
+
+  it('빈 입력 안전: RadialBreakdown/Sparkline은 빈 상태 문구', () => {
+    render(
+      <>
+        <RadialBreakdown items={[]} />
+        <Sparkline samples={[]} />
+      </>,
+    );
+    expect(screen.getByText('No items')).toBeInTheDocument();
+    expect(screen.getByText('No samples')).toBeInTheDocument();
   });
 });

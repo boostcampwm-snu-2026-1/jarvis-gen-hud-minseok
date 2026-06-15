@@ -20,6 +20,9 @@ const ALLOWED_COMPONENTS = [
   'Alert',
   'Badge',
   'KeyValue',
+  'RadialMeter',
+  'Sparkline',
+  'RadialBreakdown',
 ] as const;
 
 const MAX_REPAIR_ATTEMPTS = 2;
@@ -67,21 +70,25 @@ export const HUD_SYSTEM_PROMPT = [
   'When live is non-null, JSX may only reference keys that the selected source will push. Exact schemas: disk -> {path,totalBytes,usedBytes,freeBytes,usedPct,min,max,state,summaryItems,slices,_source}; project -> {root,branch,changedFiles,stagedFiles,unstagedFiles,untrackedFiles,files,summaryItems,_source}; build_sim -> {startedAt,elapsedSec,progress,state,steps,summaryItems,_source}; proc_watch -> {pid,running,state,summaryItems,_source}.',
   'For live disk HUDs, use value={data.usedPct}, min={data.min}, max={data.max}, slices={data.slices}, and items={data.summaryItems}; do not invent aliases such as used_percent or free_pct.',
   'design.primitives must contain component names only, such as "Chart" or "ProgressBar"; never include props like "Chart kind=bar" in primitives.',
-  'Archetype map: progress/pipeline -> Steps + ProgressBar; utilization/capacity -> Gauge + Stat; breakdown/composition -> PieChart + Stat; timeseries/trend -> Chart kind="line" or kind="area"; comparison/ranking -> Chart kind="bar"; signal/waveform -> Waveform; status/overview -> StatusPanel + Badge + KeyValue.',
+  'Archetype map: progress/pipeline -> Steps + ProgressBar; utilization/capacity -> Gauge + Stat; breakdown/composition -> PieChart + Stat; timeseries/trend -> Chart kind="line" or kind="area"; comparison/ranking -> Chart kind="bar"; signal/waveform -> Waveform; status/overview -> StatusPanel + Badge + KeyValue; single headline KPI -> RadialMeter; category-around-hub (e.g. ATT&CK tactics, incident categories) -> RadialBreakdown; inline mini-trend beside a stat -> Sparkline.',
   'Graphic density: choose 2-3 complementary primitives, lead with a graphic primitive, and use KeyValue only as supporting detail. Avoid repeating the same label-table layout for different tasks.',
   `Allowed JSX components: ${ALLOWED_COMPONENTS.join(', ')}. Use only these components.`,
-  'Component props: Panel title state; ProgressBar value label state showPct; Steps steps; StatusPanel label value state hint; Gauge value min max unit label state; PieChart slices label state; Stat label value unit delta state; Chart kind data unit label state; Waveform samples label state; Alert severity title message; Badge text state; KeyValue items.',
+  'Component props: Panel title state; ProgressBar value label state showPct; Steps steps; StatusPanel label value state hint; Gauge value min max unit label state; PieChart slices label state; Stat label value unit delta state; Chart kind data unit label state; Waveform samples label state; Alert severity title message; Badge text state; KeyValue items; RadialMeter value max unit label state; Sparkline samples label state; RadialBreakdown items label unit state.',
   'Valid state/severity values are only stable, info, caution, critical.',
   'No imports. No arbitrary HTML elements. No inline style. No className.',
   'Top-level JSX must be exactly one <Panel>...</Panel> when jsx is not null.',
   'Numbers and arrays in JSX props must reference data.*. Do not hardcode generated numbers or array literals.',
+  'Color is automatic from design tokens. Use state only to signal genuine status. Do NOT use state to convey magnitude or category: heat intensity (Chart kind="bar") and categorical series (PieChart, RadialBreakdown) are colored automatically by non-semantic palettes. Set state on a slice/item only when it carries real status.',
   'A HUD is not a label table. Do not return a KeyValue-only HUD.',
-  'For quantitative tasks, include at least one visual primitive: PieChart, Gauge, ProgressBar, Chart, Stat, Steps, or StatusPanel. KeyValue may be supporting detail only.',
+  'For quantitative tasks, include at least one visual primitive: PieChart, Gauge, RadialMeter, RadialBreakdown, Sparkline, ProgressBar, Chart, Stat, Steps, or StatusPanel. KeyValue may be supporting detail only.',
   'For KeyValue, create data.summaryItems and use <KeyValue items={data.summaryItems} />.',
   'For Steps, create data.steps and use <Steps steps={data.steps} />.',
   'For Chart, create data.chartData and use <Chart data={data.chartData} />.',
   'For PieChart, create data.slices and use <PieChart slices={data.slices} />.',
   'For Waveform, create data.samples and use <Waveform samples={data.samples} />.',
+  'For Sparkline, create data.samples (number[]) and use <Sparkline samples={data.samples} />.',
+  'For RadialMeter, use <RadialMeter value={data.someValue} max={data.someMax} unit={...} label={...} /> with value and max from data.',
+  'For RadialBreakdown, create data.items (each {label, value, state?}) and use <RadialBreakdown items={data.items} />.',
   'When seed data is already sufficient, pass it through unchanged and choose primitives from the archetype map.',
   'If a HUD is not useful or data collection fails, return jsx:null and explain briefly in say.',
 ].join('\n');
@@ -469,6 +476,9 @@ function hasVisualPrimitive(components: Set<string>): boolean {
     'Chart',
     'Waveform',
     'Alert',
+    'RadialMeter',
+    'Sparkline',
+    'RadialBreakdown',
   ].some((component) => components.has(component));
 }
 

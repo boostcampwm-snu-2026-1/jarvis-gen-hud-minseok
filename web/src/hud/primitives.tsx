@@ -85,6 +85,35 @@ export interface KeyValueProps {
   data?: { k?: string; v?: string; label?: string; value?: string }[];
 }
 
+export interface RadialMeterProps {
+  value?: number;
+  max?: number;
+  label?: string;
+  unit?: string;
+  state?: State;
+}
+
+export interface SparklineProps {
+  samples?: number[];
+  data?: number[];
+  label?: string;
+  state?: State;
+}
+
+export interface RadialBreakdownItem {
+  label?: string;
+  value?: number;
+  state?: State;
+}
+
+export interface RadialBreakdownProps {
+  items?: RadialBreakdownItem[];
+  data?: RadialBreakdownItem[];
+  label?: string;
+  unit?: string;
+  state?: State;
+}
+
 const DEFAULT_STATE: State = 'info';
 const CAT_PALETTE_SIZE = 8;
 
@@ -515,6 +544,190 @@ export function KeyValue({ items, data }: KeyValueProps) {
   );
 }
 
+/**
+ * RadialMeter — 동심 레이더 KPI. 단일 핵심 수치 + 맥락("47 INCIDENTS").
+ * 중앙 readout = value, 링 채움 = value/max. 손 SVG(동심 틱 링 + 진행 아크).
+ */
+export function RadialMeter({
+  value,
+  max = 100,
+  label,
+  unit,
+  state = DEFAULT_STATE,
+}: RadialMeterProps) {
+  const current = Number.isFinite(value) ? Number(value) : 0;
+  const safeMax = Number.isFinite(max) && Number(max) > 0 ? Number(max) : 100;
+  const pct = clamp(current / safeMax, 0, 1);
+  const radius = 44;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - pct);
+
+  return (
+    <div className={`hud-radial hud-state-${state}`}>
+      <svg viewBox="0 0 120 120" role="img" aria-label={label}>
+        <g className="hud-radial-rings" aria-hidden="true">
+          <circle cx="60" cy="60" r="52" />
+          <circle cx="60" cy="60" r="34" />
+        </g>
+        <g className="hud-radial-ticks" aria-hidden="true">
+          {gaugeTicks(24).map((tick) => (
+            <line
+              key={tick.index}
+              className={tick.major ? 'is-major' : undefined}
+              x1={tick.x1}
+              y1={tick.y1}
+              x2={tick.x2}
+              y2={tick.y2}
+            />
+          ))}
+        </g>
+        <circle className="hud-radial-track" cx="60" cy="60" r={radius} />
+        <circle
+          className="hud-radial-fill"
+          cx="60"
+          cy="60"
+          r={radius}
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={dashOffset}
+        />
+      </svg>
+      <div className="hud-radial-readout">
+        <span className="hud-radial-value">{formatNumber(current)}</span>
+        {unit && <small>{unit}</small>}
+      </div>
+      {label && <div className="hud-label hud-radial-label">{label}</div>}
+    </div>
+  );
+}
+
+/**
+ * Sparkline — 인라인 미니 트렌드(축·마커 없음). 스탯 행/타일 옆 작은 추세.
+ * Waveform에서 chrome을 제거한 판. samples = data.*.
+ */
+export function Sparkline({
+  samples,
+  data,
+  label,
+  state = DEFAULT_STATE,
+}: SparklineProps) {
+  const points = sparkPoints(asArray(samples ?? data));
+
+  return (
+    <div className={`hud-sparkline hud-state-${state}`}>
+      {label && <span className="hud-label">{label}</span>}
+      {points ? (
+        <svg
+          viewBox="0 0 120 28"
+          role="img"
+          aria-label={label}
+          preserveAspectRatio="none"
+        >
+          <polyline className="hud-sparkline-line" points={points} />
+        </svg>
+      ) : (
+        <div className="hud-empty">No samples</div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * RadialBreakdown — 허브 둘레 카테고리 스포크(ATT&CK 룩) + 중앙 합계.
+ * 스포크 길이 = 값, 색은 state가 있으면 의미색, 없으면 categorical(--cat-*).
+ */
+export function RadialBreakdown({
+  items,
+  data,
+  label,
+  unit,
+  state = DEFAULT_STATE,
+}: RadialBreakdownProps) {
+  const entries = asArray(items ?? data).map((item, index) => ({
+    label: item.label ?? `Item ${index + 1}`,
+    value: Number.isFinite(item.value) ? Number(item.value) : 0,
+    state: item.state,
+  }));
+
+  if (entries.length === 0) {
+    return <div className="hud-empty">No items</div>;
+  }
+
+  const total = entries.reduce((sum, item) => sum + item.value, 0);
+  const maxValue = Math.max(...entries.map((item) => item.value), 0) || 1;
+  const cx = 100;
+  const cy = 100;
+  const minR = 28;
+  const maxR = 70;
+
+  const spokes = entries.map((item, index) => {
+    const angle = ((index / entries.length) * 360 - 90) * (Math.PI / 180);
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const length = minR + (item.value / maxValue) * (maxR - minR);
+    const tone = item.state
+      ? `hud-state-${item.state}`
+      : `hud-cat-${index % CAT_PALETTE_SIZE}`;
+    const anchor: 'start' | 'middle' | 'end' =
+      cos > 0.33 ? 'start' : cos < -0.33 ? 'end' : 'middle';
+    return {
+      label: item.label,
+      value: item.value,
+      tone,
+      anchor,
+      ex: cx + cos * length,
+      ey: cy + sin * length,
+      lx: cx + cos * (maxR + 12),
+      ly: cy + sin * (maxR + 12),
+    };
+  });
+
+  return (
+    <div className={`hud-radial-breakdown hud-state-${state}`}>
+      {label && <div className="hud-label">{label}</div>}
+      <svg viewBox="0 0 200 200" role="img" aria-label={label}>
+        <g className="hud-rb-rings" aria-hidden="true">
+          <circle cx={cx} cy={cy} r={maxR} />
+          <circle cx={cx} cy={cy} r={(minR + maxR) / 2} />
+        </g>
+        {spokes.map((spoke, index) => (
+          <g
+            key={`${index}-${spoke.label}`}
+            className={`hud-rb-spoke ${spoke.tone}`}
+          >
+            <line x1={cx} y1={cy} x2={spoke.ex} y2={spoke.ey} />
+            <circle cx={spoke.ex} cy={spoke.ey} r="3.4" />
+            <text
+              className="hud-rb-label"
+              x={spoke.lx}
+              y={spoke.ly}
+              textAnchor={spoke.anchor}
+            >
+              {spoke.label}
+            </text>
+            <text
+              className="hud-rb-value"
+              x={spoke.lx}
+              y={spoke.ly + 9}
+              textAnchor={spoke.anchor}
+            >
+              {formatNumber(spoke.value)}
+            </text>
+          </g>
+        ))}
+        <circle className="hud-rb-core" cx={cx} cy={cy} r={minR - 6} />
+        <text className="hud-rb-total" x={cx} y={unit ? cy - 2 : cy}>
+          {formatNumber(total)}
+        </text>
+        {unit && (
+          <text className="hud-rb-unit" x={cx} y={cy + 11}>
+            {unit}
+          </text>
+        )}
+      </svg>
+    </div>
+  );
+}
+
 function toPercent(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return clamp(value, 0, 100);
@@ -627,6 +840,21 @@ function waveformPoints(samples: number[]): string | undefined {
       const x = step * index;
       const y = 28 - (sample / max) * 22;
       return `${x},${y}`;
+    })
+    .join(' ');
+}
+
+function sparkPoints(samples: number[]): string | undefined {
+  if (samples.length === 0) return undefined;
+  const max = Math.max(...samples);
+  const min = Math.min(...samples);
+  const range = max - min || 1;
+  const step = samples.length === 1 ? 0 : 120 / (samples.length - 1);
+  return samples
+    .map((sample, index) => {
+      const x = step * index;
+      const y = 26 - ((sample - min) / range) * 24;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(' ');
 }

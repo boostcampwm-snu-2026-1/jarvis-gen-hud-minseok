@@ -724,6 +724,177 @@
   overflow-wrap: anywhere;
 }
 
+/* ── RadialMeter — 동심 레이더 KPI ── */
+.hud-radial {
+  align-items: center;
+  color: var(--hud-state-color);
+  display: grid;
+  justify-items: center;
+  position: relative;
+}
+
+.hud-radial svg {
+  inline-size: min(100%, 168px);
+  overflow: visible;
+}
+
+.hud-radial-rings circle {
+  fill: none;
+  opacity: 0.5;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.hud-radial-ticks line {
+  opacity: 0.4;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1;
+}
+
+.hud-radial-ticks .is-major {
+  opacity: 0.78;
+  stroke-width: 1.8;
+}
+
+.hud-radial-track,
+.hud-radial-fill {
+  fill: none;
+  stroke-linecap: round;
+  stroke-width: 8;
+  transform: rotate(-90deg);
+  transform-origin: center;
+}
+
+.hud-radial-track {
+  stroke: color-mix(in srgb, var(--surface-2) 78%, var(--hud-state-color));
+}
+
+.hud-radial-fill {
+  filter: drop-shadow(0 0 6px currentColor);
+  stroke: currentColor;
+  transition: stroke-dashoffset var(--dur-slow) var(--ease);
+}
+
+.hud-radial-readout {
+  align-items: baseline;
+  display: flex;
+  font-family: var(--font-mono);
+  gap: var(--sp-1);
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  position: absolute;
+  transform: translate(-50%, -62%);
+}
+
+.hud-radial-value {
+  color: var(--hud-state-color);
+  font-size: var(--fs-2xl);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hud-radial-readout small {
+  color: var(--text-mid);
+  font-size: var(--fs-xs);
+}
+
+.hud-radial-label {
+  margin-block-start: calc(-1 * var(--sp-2));
+  text-align: center;
+}
+
+/* ── Sparkline — 인라인 미니 트렌드 ── */
+.hud-sparkline {
+  color: var(--hud-state-color);
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.hud-sparkline svg {
+  block-size: 28px;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.hud-sparkline-line {
+  fill: none;
+  filter: drop-shadow(0 0 3px currentColor);
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ── RadialBreakdown — 허브 둘레 카테고리 스포크 ── */
+.hud-radial-breakdown {
+  color: var(--hud-state-color);
+  display: grid;
+  gap: var(--sp-2);
+  justify-items: center;
+}
+
+.hud-radial-breakdown svg {
+  inline-size: min(100%, 260px);
+  overflow: visible;
+}
+
+.hud-rb-rings circle {
+  fill: none;
+  opacity: 0.5;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.hud-rb-spoke line {
+  opacity: 0.85;
+  stroke: var(--hud-state-color);
+  stroke-linecap: round;
+  stroke-width: 2.4;
+}
+
+.hud-rb-spoke circle {
+  fill: var(--hud-state-color);
+  filter: drop-shadow(0 0 4px var(--hud-state-color));
+}
+
+.hud-rb-label {
+  fill: var(--text-mid);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.hud-rb-value {
+  fill: var(--text);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.hud-rb-core {
+  fill: color-mix(in srgb, var(--bg) 82%, var(--hud-state-color));
+  stroke: var(--hud-state-color);
+  stroke-width: 1;
+}
+
+.hud-rb-total {
+  dominant-baseline: middle;
+  fill: var(--text);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.hud-rb-unit {
+  dominant-baseline: middle;
+  fill: var(--text-mid);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  text-anchor: middle;
+}
+
 @keyframes hudPulse {
   0%,
   100% {
@@ -740,6 +911,7 @@
   }
 
   .hud-gauge-fill,
+  .hud-radial-fill,
   .hud-progress progress::-webkit-progress-value {
     transition: none;
   }

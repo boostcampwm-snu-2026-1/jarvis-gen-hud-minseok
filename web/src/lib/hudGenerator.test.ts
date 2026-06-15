@@ -101,6 +101,29 @@ describe('extractHudEnvelope', () => {
     expect(() => assertValidHudEnvelope(envelope)).toThrow(/PieChart/);
   });
 
+  it('validates an envelope built from a Tier2 primitive', () => {
+    const envelope = extractHudEnvelope(
+      JSON.stringify({
+        say: 'incident breakdown',
+        design: {
+          data_kind: 'category breakdown',
+          primitives: ['RadialBreakdown'],
+          layout: 'hub spokes',
+          why: 'category values around a hub',
+        },
+        data: {
+          items: [
+            { label: 'Initial Access', value: 8 },
+            { label: 'Execution', value: 14 },
+          ],
+        },
+        jsx: '<Panel title="Tactics" state="info"><RadialBreakdown items={data.items} label="Tactics" /></Panel>',
+      }),
+    );
+
+    expect(() => assertValidHudEnvelope(envelope)).not.toThrow();
+  });
+
   it('drops unknown live sources without rejecting the HUD', () => {
     const envelope = extractHudEnvelope(
       JSON.stringify({
@@ -235,5 +258,36 @@ describe('assertValidHudJsx', () => {
         '<Panel title="Top slice" state="info"><Stat label="Largest" value={data.slices[0].value} state="info" /></Panel>',
       ),
     ).not.toThrow();
+  });
+
+  it('allows the Tier2 primitives (RadialMeter / Sparkline / RadialBreakdown)', () => {
+    expect(() =>
+      assertValidHudJsx(
+        '<Panel title="Incidents" state="info"><RadialMeter value={data.count} max={data.max} unit="incidents" label="Open" /></Panel>',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertValidHudJsx(
+        '<Panel title="Tactics" state="info"><RadialBreakdown items={data.items} label="Tactics" /></Panel>',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertValidHudJsx(
+        '<Panel title="Trend" state="info"><Sparkline samples={data.trend} label="7d" /></Panel>',
+      ),
+    ).not.toThrow();
+  });
+
+  it('still rejects hardcoded arrays/numbers on the new primitives', () => {
+    expect(() =>
+      assertValidHudJsx(
+        '<Panel title="x" state="info"><RadialBreakdown items={[{label:"a",value:1}]} /></Panel>',
+      ),
+    ).toThrow(/array props/);
+    expect(() =>
+      assertValidHudJsx(
+        '<Panel title="x" state="info"><RadialMeter value={42} max={data.max} /></Panel>',
+      ),
+    ).toThrow(/deterministic data/);
   });
 });

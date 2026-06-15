@@ -7,6 +7,9 @@ import {
   Panel,
   PieChart,
   ProgressBar,
+  RadialBreakdown,
+  RadialMeter,
+  Sparkline,
   Stat,
   StatusPanel,
   Steps,
@@ -108,6 +111,18 @@ const attackCategories = [
   { label: 'Impact', value: 6 },
 ];
 
+// Tier 2 신규 프리미티브 픽스처.
+const sensorTrend = [3, 5, 4, 8, 6, 9, 7, 11, 9, 12];
+
+const tacticBreakdown = [
+  { label: 'Initial Access', value: 8 },
+  { label: 'Execution', value: 14 },
+  { label: 'Persistence', value: 5 },
+  { label: 'Priv Esc', value: 7 },
+  { label: 'Lateral', value: 11 },
+  { label: 'Exfiltration', value: 3, state: 'critical' as const },
+];
+
 export function Gallery() {
   return (
     <div className="gallery-shell">
@@ -197,6 +212,81 @@ export function Gallery() {
                 unit="%"
                 state="info"
               />
+            </Panel>
+          </div>
+        </section>
+
+        <section className="gallery-state-section">
+          <div className="gallery-section-head">
+            <Badge text="tier 2" state="info" />
+            <span>신규 프리미티브: RadialMeter · Sparkline · RadialBreakdown</span>
+          </div>
+
+          <div className="hud-grid">
+            <Panel title="RadialMeter (단일 KPI)" state="info">
+              <RadialMeter
+                value={47}
+                max={60}
+                unit="incidents"
+                label="Open incidents"
+                state="caution"
+              />
+            </Panel>
+
+            <Panel title="Sparkline (인라인 추세)" state="info">
+              <Stat label="Detections / hr" value={12} state="info" />
+              <Sparkline samples={sensorTrend} label="last 10h" state="info" />
+            </Panel>
+
+            <Panel title="RadialBreakdown (카테고리 스포크)" state="info">
+              <RadialBreakdown
+                items={tacticBreakdown}
+                label="Tactic categories"
+                unit="alerts"
+                state="info"
+              />
+            </Panel>
+          </div>
+        </section>
+
+        <section className="gallery-state-section">
+          <div className="gallery-section-head">
+            <Badge text="composite" state="info" />
+            <span>레퍼런스풍 SOC 합성 — 재해석(복제 아님), 토큰·프리미티브만</span>
+          </div>
+
+          <div className="hud-grid">
+            <Panel title="ACTIVE INCIDENTS" state="caution">
+              <RadialMeter
+                value={47}
+                max={60}
+                unit="incidents"
+                label="Active"
+                state="caution"
+              />
+            </Panel>
+
+            <Panel title="TACTIC BREAKDOWN" state="info" span={2}>
+              <RadialBreakdown
+                items={tacticBreakdown}
+                label="By tactic"
+                state="info"
+              />
+            </Panel>
+
+            <Panel title="KILL-CHAIN INTENSITY" state="info" span={2}>
+              <Chart
+                kind="bar"
+                data={heatBars}
+                unit="score"
+                label="Stage intensity (heat)"
+                state="info"
+              />
+            </Panel>
+
+            <Panel title="DETECTION TREND" state="info">
+              <Stat label="Detections / hr" value={12} delta={4} state="info" />
+              <Sparkline samples={sensorTrend} label="10h" state="info" />
             </Panel>
           </div>
         </section>

@@ -168,6 +168,27 @@ interface ChartProps {
 interface WaveformProps { samples: number[]; label?: string; state?: State; }
 ```
 
+### RadialMeter — 동심 레이더 KPI (단일 핵심 수치 + 맥락)
+```ts
+interface RadialMeterProps { value: number; max?: number; label?: string; unit?: string; state?: State; }
+// 중앙 readout=value, 링 채움=value/max. "47 INCIDENTS" 같은 헤드라인 KPI. 손 SVG.
+```
+
+### Sparkline — 인라인 미니 트렌드 (축·마커 없음)
+```ts
+interface SparklineProps { samples: number[]; label?: string; state?: State; }
+// 스탯 행/타일 옆 작은 추세. Waveform의 chrome 제거판. samples는 data.*에서.
+```
+
+### RadialBreakdown — 허브 둘레 카테고리 스포크 (+ 중앙 합계)
+```ts
+interface RadialBreakdownProps {
+  items: { label: string; value: number; state?: State }[];
+  label?: string; unit?: string; state?: State;
+}
+// 카테고리별 값 분해(ATT&CK 룩). 스포크 길이=값, 색은 state면 의미색·없으면 --cat-*, 중앙=total.
+```
+
 ### Alert — 메시지
 ```ts
 interface AlertProps { severity: State; title: string; message?: string; }
