@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from .sources import get_source, list_sources
+from .sources import describe_sources, get_source, list_sources
 
 
 MIN_INTERVAL_MS = 1000
@@ -17,6 +17,12 @@ app = FastAPI(title="J.A.R.V.I.S Live HUD Orchestrator")
 @app.get("/health")
 async def health() -> dict[str, Any]:
     return {"ok": True, "sources": list_sources()}
+
+
+@app.get("/sources")
+async def sources() -> list[dict[str, Any]]:
+    """Canonical descriptor list (fetcher omitted) the frontend derives from."""
+    return describe_sources()
 
 
 @app.websocket("/ws")
