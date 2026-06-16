@@ -137,6 +137,9 @@ function ChatApp() {
     // 라이브 구독을 먼저 해제해 이전 소스가 새 작업 HUD 위로 갱신하지 않게 한다.
     unsubscribeLiveHud();
     setHud({ phase: 'generating', message: '작업 준비 중', activity: [] });
+    // 화면에서 비운 HUD가 새로고침으로 되살아나지 않게 저장본도 함께 무효화한다.
+    // 이 턴이 새 HUD를 만들면 setRenderedHud→persistHudState가 다시 기록한다.
+    clearHudState();
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -244,8 +247,7 @@ function ChatApp() {
     } catch (err) {
       usherController.abort();
       if (controller.signal.aborted) {
-        // 중단(stop/새 대화)으로 끊김 — 즉답 잠정 라인이 남아 있으면 확정 처리.
-        setMessages((prev) => clearPending(prev));
+        // 중단(stop/새 대화)으로 끊김 — 즉답 잠정 라인은 finally에서 일괄 확정 처리.
         setStatus('idle');
         setStatusDetail(undefined);
       } else {
@@ -260,6 +262,10 @@ function ChatApp() {
     } finally {
       usherController.abort();
       await usherTask;
+      // 즉답(usher) 잠정 라인이 남아 있으면 확정 처리(내용 보존, pending만 해제).
+      // usher 종료를 await한 뒤 한 번에 정리하므로 중단·에러·정상 모든 경로에서
+      // 잔류 pending(에러 후 고착되는 이탤릭 ack 등)이 남지 않는다. 이미 확정이면 no-op.
+      setMessages((prev) => clearPending(prev));
       // 본 HUD로 교체되지 않은 도구 진행 표시가 남지 않게 정리(잔상 방지).
       // rendered/error/idle이면 건드리지 않는다.
       clearHudProgress();
@@ -424,6 +430,9 @@ function ChatApp() {
     const controller = new AbortController();
     hudAbortRef.current?.abort();
     hudAbortRef.current = controller;
+    // 수리는 새 타임라인으로: 이전 턴의 도구 진행 항목이 남아 있으면 수리 중
+    // 도구 이벤트가 그 위로 누적돼 엉뚱한 진행/카운트가 보일 수 있다(잔상 방지).
+    activityRef.current = [];
     setHud({
       phase: 'generating',
       data: current.data,

@@ -300,4 +300,69 @@ describe('App usher/main 오케스트레이션', () => {
     // 이전 라이브 구독은 해제됐다(이전 소스가 새 작업 위로 갱신하지 않게).
     expect(live.unsubscribed).toContain('sub');
   });
+
+  it('본 답변이 비-중단 에러로 실패해도 즉답 잠정 라인의 pending이 풀린다', async () => {
+    // 즉답이 잠정 라인을 그린 직후 본 답변이 진짜 에러로 실패하도록 동기화한다.
+    let usherWrote: () => void = () => {};
+    const usherDone = new Promise<void>((resolve) => {
+      usherWrote = resolve;
+    });
+    streams.usher = async function* () {
+      yield '확인하겠습니다';
+      usherWrote();
+    };
+    streams.main = async function* () {
+      await usherDone;
+      yield ''; // received=true + require-yield 충족
+      throw new Error('hermes 500');
+    };
+
+    render(<App />);
+    send('실패하는 작업');
+
+    await waitFor(() =>
+      expect(screen.getByText(/Error: hermes 500/)).toBeInTheDocument(),
+    );
+    // 즉답 라인은 남되 pending(이탤릭/dim)으로 고착되지 않는다.
+    const ack = screen.getByText('확인하겠습니다');
+    expect(ack).toHaveClass('assistant');
+    expect(ack).not.toHaveClass('pending');
+  });
+
+  it('새 작업이 HUD를 만들지 않으면 저장본도 비워 새로고침 부활을 막는다', async () => {
+    // 이전 세션의 라이브 HUD를 복원한다.
+    window.localStorage.setItem(
+      'jarvis.hud',
+      JSON.stringify({
+        jsx: '<Panel title="GPU" state="info"><Stat label="temp" value={data.n} state="info" /></Panel>',
+        design: null,
+        live: { source: 'gpu', intervalMs: 1000 },
+        data: { n: 42 },
+        repairCount: 0,
+      }),
+    );
+    streams.usher = async function* () {
+      yield '확인';
+    };
+    streams.main = async function* () {
+      // HUD가 필요 없는 응답(jsx:null) — 화면은 idle로 정리된다.
+      yield JSON.stringify({
+        say: '5시입니다',
+        design: null,
+        live: null,
+        data: {},
+        jsx: null,
+      });
+    };
+
+    render(<App />);
+    expect(await screen.findByTitle('HUD frame')).toBeInTheDocument();
+
+    send('지금 몇 시야');
+
+    await waitFor(() => expect(screen.getByText('전송')).toBeInTheDocument());
+    // 화면은 빈 캔버스, 저장본은 제거돼 새로고침해도 이전 HUD가 부활하지 않는다.
+    expect(screen.getByTestId('hud-empty')).toBeInTheDocument();
+    expect(window.localStorage.getItem('jarvis.hud')).toBeNull();
+  });
 });
