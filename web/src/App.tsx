@@ -8,6 +8,7 @@ import { Gallery } from './Gallery';
 import {
   assertValidHudEnvelope,
   assertValidHudJsx,
+  buildHudSystemPrompt,
   createHudFallback,
   extractHudEnvelope,
   HUD_SYSTEM_PROMPT,
@@ -19,13 +20,22 @@ import { shouldRotateConversation } from './lib/conversationRotation';
 import {
   createConversationName,
   streamResponse,
+  streamUsher,
   type HermesToolEvent,
 } from './lib/hermes';
 import {
   LiveHudClient,
+  loadLiveSources,
+  setLiveHudSources,
   type LiveHudDataMessage,
   type LiveHudEndMessage,
 } from './lib/liveHud';
+import {
+  extractToolDetail,
+  getToolCallId,
+  getToolOutcome,
+  type ToolActivity,
+} from './lib/toolActivity';
 import type { JarvisStatus } from './types';
 import './styles/app.css';
 import './hud/styles.css';
@@ -60,15 +70,32 @@ function ChatApp() {
   const [hud, setHud] = useState<HudRenderState>(loadHudState);
   const abortRef = useRef<AbortController | null>(null);
   const hudAbortRef = useRef<AbortController | null>(null);
+  const usherAbortRef = useRef<AbortController | null>(null);
+  const activityRef = useRef<ToolActivity[]>([]);
   const liveHudRef = useRef<LiveHudClient | null>(null);
   const activeLiveSubRef = useRef<string | null>(null);
   const hudRef = useRef<HudRenderState>(hud);
   const lastRenderErrorRef = useRef<string | null>(null);
   const lastLivePersistRef = useRef(0);
+  // System prompt starts from the builtin fallback and is rebuilt from /sources
+  // so the model is told about dynamically-registered live sources and schemas.
+  const systemPromptRef = useRef(HUD_SYSTEM_PROMPT);
 
   useEffect(() => {
     hudRef.current = hud;
   }, [hud]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadLiveSources().then((descriptors) => {
+      if (cancelled) return;
+      setLiveHudSources(descriptors.map((descriptor) => descriptor.id));
+      systemPromptRef.current = buildHudSystemPrompt(descriptors);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     writeStorage(CONVERSATION_STORAGE_KEY, conversation);
@@ -104,9 +131,52 @@ function ChatApp() {
     setStreaming(true);
     setStatus('thinking');
     setStatusDetail(undefined);
+    // 새 턴의 도구 진행 타임라인을 초기화(이전 턴 잔상 방지).
+    activityRef.current = [];
+    // 새 작업 시작: 이전 HUD(완성·라이브 포함)를 즉시 비우고 진행 표시로 교체.
+    // 라이브 구독을 먼저 해제해 이전 소스가 새 작업 HUD 위로 갱신하지 않게 한다.
+    unsubscribeLiveHud();
+    setHud({ phase: 'generating', message: '작업 준비 중', activity: [] });
+    // 화면에서 비운 HUD가 새로고침으로 되살아나지 않게 저장본도 함께 무효화한다.
+    // 이 턴이 새 HUD를 만들면 setRenderedHud→persistHudState가 다시 기록한다.
+    clearHudState();
 
     const controller = new AbortController();
     abortRef.current = controller;
+    const usherController = new AbortController();
+    usherAbortRef.current = usherController;
+
+    // 본 답변(메인)이 자기 텍스트를 내기 시작하면 즉답을 멈추고 교체한다.
+    const mainTookOver = { current: false };
+    let usherText = '';
+
+    // 즉답(usher): 본 답변과 병렬로, 자비스 한 문장 선응답을 즉시 흘린다.
+    // best-effort — 실패하거나 느려도 본 답변엔 영향 없음.
+    const usherTask = (async () => {
+      try {
+        for await (const delta of streamUsher(text, {
+          signal: usherController.signal,
+        })) {
+          if (mainTookOver.current || usherController.signal.aborted || !delta) {
+            continue;
+          }
+          usherText += delta;
+          setMessages((prev) => setLastAssistant(prev, usherText, true));
+        }
+      } catch {
+        // 즉답은 임계경로가 아니다. 조용히 무시.
+      }
+    })();
+
+    const takeOverFromUsher = () => {
+      if (mainTookOver.current) {
+        return;
+      }
+      mainTookOver.current = true;
+      usherController.abort();
+      // 즉답 라인을 비우고 본 say를 처음부터 흘린다.
+      setMessages((prev) => setLastAssistant(prev, '', false));
+    };
 
     try {
       let received = false;
@@ -116,13 +186,16 @@ function ChatApp() {
 
       for await (const delta of streamResponse(text, activeConversation, {
         signal: controller.signal,
-        instructions: HUD_SYSTEM_PROMPT,
+        instructions: systemPromptRef.current,
         onToolEvent: handleToolEvent,
       })) {
         received = true;
         const parsed = parser.push(delta);
 
         if (parsed.text) {
+          if (!streamedText) {
+            takeOverFromUsher();
+          }
           streamedText = true;
           setMessages((prev) => appendToLastAssistant(prev, parsed.text));
         }
@@ -133,21 +206,48 @@ function ChatApp() {
         }
       }
 
+      // 메인 종료. 교체된 경우 즉답을 끊고, 아니면 즉답이 한 문장을 끝내게 둔다.
+      if (mainTookOver.current) {
+        usherController.abort();
+      }
+      await usherTask;
+
       if (!received) {
-        setMessages((prev) => appendToLastAssistant(prev, '(empty response)'));
+        // 본 답변이 비었으면 즉답이라도 확정 라인으로 남긴다.
+        if (usherText.trim()) {
+          setMessages((prev) => setLastAssistant(prev, usherText, false));
+        } else {
+          setMessages((prev) =>
+            appendToLastAssistant(prev, '(empty response)'),
+          );
+        }
       } else {
         const finished = parser.finish();
         if (finished.isEnvelope) {
-          await finishEnvelopeTurn(finished.raw, finished.say, controller);
-        } else if (!streamedText && finished.raw) {
-          setMessages((prev) => appendToLastAssistant(prev, finished.raw));
+          await finishEnvelopeTurn(
+            finished.raw,
+            finished.say,
+            controller,
+            usherText,
+          );
+        } else if (!streamedText) {
+          // 비-envelope인데 스트리밍된 본문이 없음(공백뿐 등). 즉답이 있으면
+          // 그대로 확정 라인으로 남기고, 없으면 raw나 빈 응답을 표시(pending 해제).
+          const fallback = usherText.trim()
+            ? usherText
+            : finished.raw.trim()
+              ? finished.raw
+              : '(empty response)';
+          setMessages((prev) => setLastAssistant(prev, fallback, false));
         }
       }
 
       setStatus('idle');
       setStatusDetail(undefined);
     } catch (err) {
+      usherController.abort();
       if (controller.signal.aborted) {
+        // 중단(stop/새 대화)으로 끊김 — 즉답 잠정 라인은 finally에서 일괄 확정 처리.
         setStatus('idle');
         setStatusDetail(undefined);
       } else {
@@ -160,14 +260,38 @@ function ChatApp() {
         setStatusDetail(undefined);
       }
     } finally {
+      usherController.abort();
+      await usherTask;
+      // 즉답(usher) 잠정 라인이 남아 있으면 확정 처리(내용 보존, pending만 해제).
+      // usher 종료를 await한 뒤 한 번에 정리하므로 중단·에러·정상 모든 경로에서
+      // 잔류 pending(에러 후 고착되는 이탤릭 ack 등)이 남지 않는다. 이미 확정이면 no-op.
+      setMessages((prev) => clearPending(prev));
+      // 본 HUD로 교체되지 않은 도구 진행 표시가 남지 않게 정리(잔상 방지).
+      // rendered/error/idle이면 건드리지 않는다.
+      clearHudProgress();
       setStreaming(false);
       abortRef.current = null;
+      if (usherAbortRef.current === usherController) {
+        usherAbortRef.current = null;
+      }
     }
+  }
+
+  /**
+   * 도구 진행(generating) 표시를 idle로 정리한다. 본 HUD 렌더(rendered)·이전
+   * 완성 HUD·에러 상태는 보존하기 위해 generating일 때만 동작한다(함수형
+   * 업데이트라 항상 최신 phase를 본다).
+   */
+  function clearHudProgress() {
+    setHud((current) =>
+      current.phase === 'generating' ? { phase: 'idle' } : current,
+    );
   }
 
   function handleStop() {
     abortRef.current?.abort();
     hudAbortRef.current?.abort();
+    usherAbortRef.current?.abort();
     setStatusDetail(undefined);
     setHud((current) =>
       current.phase === 'generating'
@@ -179,6 +303,8 @@ function ChatApp() {
   function handleNewConversation() {
     abortRef.current?.abort();
     hudAbortRef.current?.abort();
+    usherAbortRef.current?.abort();
+    activityRef.current = [];
     // Topic shift only: long-term memory stays scoped by X-Hermes-Session-Key.
     setConversation(createConversationName());
     setMessages([]);
@@ -192,15 +318,52 @@ function ChatApp() {
   }
 
   const handleToolEvent = useCallback((event: HermesToolEvent) => {
-    const toolName = formatToolName(event.name);
+    const list = activityRef.current;
     setStatus('tooling');
-    setStatusDetail(event.phase === 'call' ? toolName : `${toolName} done`);
+
+    if (event.phase === 'call') {
+      // 새 도구 시작 — 직전 active 항목은 done으로 마감(대개 직전 도구 완료).
+      for (const item of list) {
+        if (item.status === 'active') item.status = 'done';
+      }
+      const toolName = formatToolName(event.name);
+      list.push({
+        id: getToolCallId(event.item) ?? `tool-${list.length}`,
+        name: toolName,
+        status: 'active',
+        detail: extractToolDetail(event.item, 'call'),
+      });
+      setStatusDetail(toolName);
+    } else {
+      // output — call_id로 매칭(없으면 마지막 active/마지막 항목).
+      const callId = getToolCallId(event.item);
+      const target =
+        (callId ? list.find((item) => item.id === callId) : undefined) ??
+        [...list].reverse().find((item) => item.status === 'active') ??
+        list[list.length - 1];
+      if (target) {
+        target.status = getToolOutcome(event.item);
+        const detail = extractToolDetail(event.item, 'output');
+        if (detail) target.detail = detail;
+        setStatusDetail(
+          `${target.name} ${target.status === 'failed' ? 'failed' : 'done'}`,
+        );
+      }
+    }
+
+    // 첫 도구 이벤트에서 generating 진입(도구 안 쓰는 턴은 진행 HUD 안 뜸).
+    setHud({
+      phase: 'generating',
+      activity: list.map((item) => ({ ...item })),
+      message: '작업 수행 중',
+    });
   }, []);
 
   async function finishEnvelopeTurn(
     raw: string,
     streamedSay: string,
     controller: AbortController,
+    ackText: string,
   ) {
     let result: HudGenerationResult;
 
@@ -232,8 +395,14 @@ function ChatApp() {
     if (controller.signal.aborted) return;
 
     if (result.say) {
-      setMessages((prev) => replaceLastAssistant(prev, result.say));
-    } else if (!streamedSay) {
+      setMessages((prev) => setLastAssistant(prev, result.say, false));
+    } else if (streamedSay) {
+      // 스트리밍된 say가 이미 버블에 있음 — 잠정 표시만 해제.
+      setMessages((prev) => setLastAssistant(prev, streamedSay, false));
+    } else if (ackText.trim()) {
+      // 본 say가 없음(HUD 전용 등) — 즉답을 확정 라인으로 남긴다.
+      setMessages((prev) => setLastAssistant(prev, ackText, false));
+    } else {
       setMessages((prev) => appendToLastAssistant(prev, '(empty response)'));
     }
 
@@ -261,6 +430,9 @@ function ChatApp() {
     const controller = new AbortController();
     hudAbortRef.current?.abort();
     hudAbortRef.current = controller;
+    // 수리는 새 타임라인으로: 이전 턴의 도구 진행 항목이 남아 있으면 수리 중
+    // 도구 이벤트가 그 위로 누적돼 엉뚱한 진행/카운트가 보일 수 있다(잔상 방지).
+    activityRef.current = [];
     setHud({
       phase: 'generating',
       data: current.data,
@@ -505,14 +677,37 @@ function dropEmptyTrailingAssistant(prev: DisplayMessage[]): DisplayMessage[] {
   return prev;
 }
 
-function replaceLastAssistant(
+/**
+ * 마지막 (비-에러) assistant 메시지의 내용을 통째로 교체하고 잠정(pending)
+ * 표시를 설정한다. 즉답(usher)을 흘릴 땐 pending=true, 본 답변으로 확정할 땐
+ * pending=false. append와 달리 누적이 아니라 치환이라 즉답→본답변 교체에 쓴다.
+ */
+function setLastAssistant(
   prev: DisplayMessage[],
   content: string,
+  pending: boolean,
 ): DisplayMessage[] {
   const next = prev.slice();
   for (let i = next.length - 1; i >= 0; i--) {
     if (next[i].role === 'assistant' && !next[i].isError) {
-      next[i] = { ...next[i], content };
+      next[i] = { ...next[i], content, pending };
+      break;
+    }
+  }
+  return next;
+}
+
+/**
+ * 마지막 (비-에러) assistant 메시지의 잠정(pending) 표시만 해제한다(내용 보존).
+ * 이미 스트리밍된 본문은 그대로 두고 즉답 스타일(이탤릭·dim)만 확정으로 바꾼다.
+ * 이미 확정 상태면 같은 배열 참조를 돌려줘 불필요한 리렌더를 피한다.
+ */
+function clearPending(prev: DisplayMessage[]): DisplayMessage[] {
+  const next = prev.slice();
+  for (let i = next.length - 1; i >= 0; i--) {
+    if (next[i].role === 'assistant' && !next[i].isError) {
+      if (!next[i].pending) return prev;
+      next[i] = { ...next[i], pending: false };
       break;
     }
   }
@@ -548,7 +743,10 @@ function loadTranscript(): DisplayMessage[] {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isDisplayMessage);
+    // 잠정(pending) 표시는 스트리밍 중 한정 상태 — 복원 시 항상 확정으로 둔다.
+    return parsed
+      .filter(isDisplayMessage)
+      .map((message) => ({ ...message, pending: false }));
   } catch {
     return [];
   }

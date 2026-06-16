@@ -4,6 +4,8 @@ import type { ChatMessage } from '../types';
 export interface DisplayMessage extends ChatMessage {
   /** 에러 알림용 의사 메시지(앱을 죽이지 않고 대화 흐름에 표시). */
   isError?: boolean;
+  /** 즉답(usher) 선응답 — 본 답변이 오면 교체될 잠정 라인. */
+  pending?: boolean;
 }
 
 interface Props {
@@ -33,7 +35,9 @@ export function ConversationPanel({ messages, streaming }: Props) {
         {messages.map((m, i) => {
           const isLastAssistant =
             m.role === 'assistant' && i === messages.length - 1;
-          const cls = m.isError ? 'msg error' : `msg ${m.role}`;
+          const cls = m.isError
+            ? 'msg error'
+            : `msg ${m.role}${m.pending ? ' pending' : ''}`;
           return (
             <div key={i} className={cls}>
               {m.content}
