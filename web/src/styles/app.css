@@ -197,6 +197,11 @@ body {
   background: var(--state-info-bg);
   border: 1px solid var(--line);
 }
+.msg.assistant.pending {
+  color: var(--text-mid);
+  font-style: italic;
+  opacity: 0.85;
+}
 .msg.error {
   align-self: stretch;
   max-width: 100%;
