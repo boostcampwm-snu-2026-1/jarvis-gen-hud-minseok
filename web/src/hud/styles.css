@@ -1,0 +1,954 @@
+.hud-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+
+.hud-state-stable {
+  --hud-state-color: var(--state-stable);
+  --hud-state-bg: var(--state-stable-bg);
+}
+
+.hud-state-info {
+  --hud-state-color: var(--state-info);
+  --hud-state-bg: var(--state-info-bg);
+}
+
+.hud-state-caution {
+  --hud-state-color: var(--state-caution);
+  --hud-state-bg: var(--state-caution-bg);
+}
+
+.hud-state-critical {
+  --hud-state-color: var(--state-critical);
+  --hud-state-bg: var(--state-critical-bg);
+}
+
+.hud-series-0 {
+  --hud-state-color: var(--series-0);
+}
+
+.hud-series-1 {
+  --hud-state-color: var(--series-1);
+}
+
+.hud-series-2 {
+  --hud-state-color: var(--series-2);
+}
+
+.hud-series-3 {
+  --hud-state-color: var(--series-3);
+}
+
+.hud-series-4 {
+  --hud-state-color: var(--series-4);
+}
+
+/* categorical(다중 시리즈/카테고리) — 비의미 색축 */
+.hud-cat-0 {
+  --hud-state-color: var(--cat-0);
+}
+.hud-cat-1 {
+  --hud-state-color: var(--cat-1);
+}
+.hud-cat-2 {
+  --hud-state-color: var(--cat-2);
+}
+.hud-cat-3 {
+  --hud-state-color: var(--cat-3);
+}
+.hud-cat-4 {
+  --hud-state-color: var(--cat-4);
+}
+.hud-cat-5 {
+  --hud-state-color: var(--cat-5);
+}
+.hud-cat-6 {
+  --hud-state-color: var(--cat-6);
+}
+.hud-cat-7 {
+  --hud-state-color: var(--cat-7);
+}
+
+/* sequential/heat(크기·강도) — 비의미 색축 */
+.hud-seq-0 {
+  --hud-state-color: var(--seq-0);
+}
+.hud-seq-1 {
+  --hud-state-color: var(--seq-1);
+}
+.hud-seq-2 {
+  --hud-state-color: var(--seq-2);
+}
+.hud-seq-3 {
+  --hud-state-color: var(--seq-3);
+}
+.hud-seq-4 {
+  --hud-state-color: var(--seq-4);
+}
+
+.hud-panel {
+  min-width: 0;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--hud-state-color) 8%, transparent) 0 1px, transparent 1px 100%),
+    linear-gradient(180deg, color-mix(in srgb, var(--hud-state-color) 5%, transparent) 0 1px, transparent 1px 100%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, var(--hud-state-color)), var(--bg));
+  background-size:
+    36px 36px,
+    36px 36px,
+    auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--glow);
+  color: var(--text);
+  overflow: hidden;
+  position: relative;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.hud-panel::before,
+.hud-panel::after {
+  border-color: var(--hud-state-color);
+  content: '';
+  opacity: 0.45;
+  pointer-events: none;
+  position: absolute;
+}
+
+.hud-panel::before {
+  block-size: 20px;
+  border-block-start: 2px solid;
+  border-inline-start: 2px solid;
+  inline-size: 20px;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+}
+
+.hud-panel::after {
+  block-size: 20px;
+  border-block-end: 2px solid;
+  border-inline-end: 2px solid;
+  inline-size: 20px;
+  inset-block-end: 0;
+  inset-inline-end: 0;
+}
+
+.hud-panel:hover {
+  border-color: var(--hud-state-color);
+  box-shadow:
+    var(--glow),
+    inset 0 0 24px color-mix(in srgb, var(--hud-state-color) 12%, transparent);
+}
+
+.hud-panel--span-2 {
+  grid-column: span 2;
+}
+
+.hud-panel--span-3 {
+  grid-column: span 3;
+}
+
+.hud-panel-title {
+  border-bottom: 1px solid var(--line);
+  color: var(--hud-state-color);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.12em;
+  padding: var(--sp-3) var(--sp-4);
+  text-transform: uppercase;
+}
+
+.hud-panel-body {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+}
+
+.hud-panel-body > * {
+  min-width: 0;
+}
+
+.hud-label,
+.hud-hint,
+.hud-empty {
+  color: var(--text-mid);
+  font-size: var(--fs-xs);
+}
+
+.hud-label {
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hud-hint,
+.hud-empty {
+  line-height: var(--lh);
+}
+
+.hud-status-panel,
+.hud-stat,
+.hud-progress,
+.hud-pie,
+.hud-chart,
+.hud-waveform,
+.hud-alert {
+  min-width: 0;
+}
+
+.hud-status-panel {
+  background: var(--hud-state-bg);
+  border: 1px solid var(--hud-state-color);
+  border-radius: var(--r-sm);
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+}
+
+.hud-status-value {
+  color: var(--hud-state-color);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hud-progress {
+  display: grid;
+  gap: var(--sp-2);
+  position: relative;
+}
+
+.hud-progress-head,
+.hud-chart-head {
+  color: var(--text-mid);
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.hud-progress progress {
+  appearance: none;
+  block-size: var(--sp-2);
+  inline-size: 100%;
+  min-inline-size: 0;
+  position: relative;
+}
+
+.hud-progress progress::-webkit-progress-bar {
+  background: var(--surface-2);
+  border-radius: var(--r-pill);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.hud-progress progress::-webkit-progress-value {
+  background: linear-gradient(90deg, var(--hud-state-color), color-mix(in srgb, var(--hud-state-color) 64%, white));
+  border-radius: var(--r-pill);
+  box-shadow: 0 0 14px var(--hud-state-color);
+  transition: inline-size var(--dur) var(--ease);
+}
+
+.hud-progress progress::-moz-progress-bar {
+  background: linear-gradient(90deg, var(--hud-state-color), color-mix(in srgb, var(--hud-state-color) 64%, white));
+  border-radius: var(--r-pill);
+}
+
+.hud-progress-scale {
+  block-size: 8px;
+  inline-size: 100%;
+  position: relative;
+}
+
+.hud-progress-scale span {
+  background: var(--hud-state-color);
+  block-size: 6px;
+  inline-size: 1px;
+  opacity: 0.52;
+  position: absolute;
+  top: 0;
+}
+
+.hud-gauge {
+  align-items: center;
+  color: var(--hud-state-color);
+  display: grid;
+  justify-items: center;
+  position: relative;
+}
+
+.hud-gauge svg {
+  inline-size: min(100%, 156px);
+  overflow: visible;
+}
+
+.hud-gauge-track,
+.hud-gauge-fill {
+  fill: none;
+  stroke-linecap: round;
+  stroke-width: 9;
+  transform: rotate(-90deg);
+  transform-origin: center;
+}
+
+.hud-gauge-track {
+  stroke: color-mix(in srgb, var(--surface-2) 78%, var(--hud-state-color));
+}
+
+.hud-gauge-fill {
+  stroke: currentColor;
+  filter: drop-shadow(0 0 5px currentColor);
+  transition: stroke-dashoffset var(--dur-slow) var(--ease);
+}
+
+.hud-gauge-ticks line {
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1;
+  opacity: 0.42;
+}
+
+.hud-gauge-ticks .is-major {
+  stroke-width: 1.8;
+  opacity: 0.8;
+}
+
+/* 동심 레이더 링 — 게이지에 레이더 질감을 더한다(토큰만). */
+.hud-gauge-ring {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+
+.hud-gauge-pointer {
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 5px currentColor);
+  transition:
+    x1 var(--dur-slow) var(--ease),
+    y1 var(--dur-slow) var(--ease),
+    x2 var(--dur-slow) var(--ease),
+    y2 var(--dur-slow) var(--ease);
+}
+
+.hud-gauge-readout {
+  align-items: baseline;
+  display: flex;
+  font-family: var(--font-mono);
+  gap: var(--sp-1);
+  position: absolute;
+  top: 45%;
+  transform: translateY(-50%);
+}
+
+.hud-gauge-readout span {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+}
+
+.hud-gauge-readout small,
+.hud-stat-value small {
+  color: var(--text-mid);
+  font-size: var(--fs-xs);
+}
+
+.hud-pie {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.hud-pie-body {
+  align-items: center;
+  display: grid;
+  gap: var(--sp-3);
+  grid-template-columns: minmax(112px, 0.8fr) minmax(0, 1.2fr);
+}
+
+.hud-pie svg {
+  color: var(--hud-state-color);
+  inline-size: min(100%, 172px);
+  justify-self: center;
+  overflow: visible;
+}
+
+.hud-pie-radar circle,
+.hud-pie-radar path {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 0.8;
+}
+
+.hud-pie-track,
+.hud-pie-segment {
+  fill: none;
+  stroke-linecap: butt;
+  stroke-width: 18;
+  transform: rotate(-90deg);
+  transform-origin: center;
+}
+
+.hud-pie-track {
+  stroke: var(--surface-2);
+}
+
+.hud-pie-segment {
+  stroke: var(--hud-state-color);
+  filter: drop-shadow(0 0 4px var(--hud-state-color));
+}
+
+.hud-pie-core {
+  fill: color-mix(in srgb, var(--bg) 82%, var(--hud-state-color));
+  stroke: var(--hud-state-color);
+  stroke-width: 1;
+}
+
+.hud-pie-total {
+  dominant-baseline: middle;
+  fill: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.hud-pie-legend {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+}
+
+.hud-pie-legend div {
+  align-items: center;
+  display: grid;
+  gap: var(--sp-2);
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.hud-pie-legend dt {
+  align-items: center;
+  color: var(--text-mid);
+  display: flex;
+  font-size: var(--fs-xs);
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.hud-pie-legend dt span {
+  background: var(--hud-state-color);
+  block-size: 9px;
+  border-radius: var(--r-pill);
+  box-shadow: 0 0 10px var(--hud-state-color);
+  inline-size: 9px;
+  flex: 0 0 auto;
+}
+
+.hud-pie-legend dd {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  margin: 0;
+}
+
+.hud-stat {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+}
+
+.hud-stat-value {
+  align-items: baseline;
+  color: var(--hud-state-color);
+  display: flex;
+  font-family: var(--font-mono);
+  gap: var(--sp-1);
+}
+
+.hud-stat-value span {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.hud-delta {
+  color: var(--text-mid);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.hud-delta.is-up {
+  color: var(--state-stable);
+}
+
+.hud-delta.is-down {
+  color: var(--state-critical);
+}
+
+.hud-steps {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hud-steps li {
+  align-items: center;
+  color: var(--text-mid);
+  display: grid;
+  font-size: var(--fs-sm);
+  gap: var(--sp-2);
+  grid-template-columns: auto 1fr;
+  min-block-size: 30px;
+  position: relative;
+}
+
+.hud-steps li::before {
+  background: var(--line);
+  block-size: 100%;
+  content: '';
+  inline-size: 1px;
+  inset-block-start: 50%;
+  inset-inline-start: 4px;
+  position: absolute;
+}
+
+.hud-steps li:last-child::before {
+  display: none;
+}
+
+.hud-step-dot {
+  background: var(--text-dim);
+  block-size: 9px;
+  border-radius: var(--r-pill);
+  box-shadow: 0 0 0 3px var(--surface-2);
+  inline-size: 9px;
+  z-index: 1;
+}
+
+.hud-step-body {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.hud-step-desc {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+.hud-steps .is-done {
+  color: var(--state-stable);
+}
+
+.hud-steps .is-active {
+  color: var(--state-info);
+}
+
+.hud-steps .is-caution {
+  color: var(--state-caution);
+}
+
+.hud-steps .is-failed {
+  color: var(--state-critical);
+}
+
+.hud-steps .is-done .hud-step-dot {
+  background: var(--state-stable);
+  box-shadow:
+    0 0 0 3px var(--surface-2),
+    0 0 10px var(--state-stable);
+}
+
+.hud-steps .is-active .hud-step-dot {
+  animation: hudPulse var(--dur-slow) var(--ease) infinite;
+  background: var(--state-info);
+  box-shadow:
+    0 0 0 3px var(--surface-2),
+    0 0 12px var(--state-info);
+}
+
+.hud-steps .is-failed .hud-step-dot {
+  background: var(--state-critical);
+  box-shadow:
+    0 0 0 3px var(--surface-2),
+    0 0 12px var(--state-critical);
+}
+
+.hud-steps .is-caution .hud-step-dot {
+  background: var(--state-caution);
+  box-shadow:
+    0 0 0 3px var(--surface-2),
+    0 0 12px var(--state-caution);
+}
+
+.hud-chart,
+.hud-waveform {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.hud-chart svg,
+.hud-waveform svg {
+  background: var(--grid);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--hud-state-color);
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.hud-chart-grid,
+.hud-waveform-mid,
+.hud-waveform-band {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.hud-chart-axis {
+  fill: none;
+  stroke: color-mix(in srgb, var(--hud-state-color) 42%, var(--line));
+  stroke-width: 1.2;
+}
+
+.hud-chart-line,
+.hud-waveform-line {
+  fill: none;
+  stroke: currentColor;
+  filter: drop-shadow(0 0 4px currentColor);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.hud-chart-points circle {
+  fill: var(--bg);
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.hud-chart-area {
+  fill: currentColor;
+  opacity: 0.18;
+}
+
+.hud-chart-bar {
+  fill: currentColor;
+}
+
+/* heat 모드: 막대 높이(값)에 따라 sequential 램프로 채움. '값 큼'=웜이며
+   상태색이 아니다(--seq-*만 사용). */
+.hud-chart-bar.hud-heat-0 {
+  fill: var(--seq-0);
+}
+.hud-chart-bar.hud-heat-1 {
+  fill: var(--seq-1);
+}
+.hud-chart-bar.hud-heat-2 {
+  fill: var(--seq-2);
+}
+.hud-chart-bar.hud-heat-3 {
+  fill: var(--seq-3);
+}
+.hud-chart-bar.hud-heat-4 {
+  fill: var(--seq-4);
+}
+
+.hud-chart-xlabels text,
+.hud-chart-ylabels text {
+  fill: var(--text-mid);
+  font-family: var(--font-mono);
+  font-size: 6px;
+}
+
+.hud-chart-ylabels text {
+  fill: var(--text-dim);
+}
+
+.hud-alert {
+  background: var(--hud-state-bg);
+  border: 1px solid var(--hud-state-color);
+  border-radius: var(--r-sm);
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+}
+
+.hud-alert strong {
+  color: var(--hud-state-color);
+  font-size: var(--fs-sm);
+}
+
+.hud-alert span {
+  color: var(--text-mid);
+  font-size: var(--fs-sm);
+  line-height: var(--lh);
+}
+
+.hud-badge {
+  align-items: center;
+  background: var(--hud-state-bg);
+  border: 1px solid var(--hud-state-color);
+  border-radius: var(--r-pill);
+  color: var(--hud-state-color);
+  display: inline-flex;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  inline-size: fit-content;
+  min-block-size: 24px;
+  padding: 0 var(--sp-2);
+  text-transform: uppercase;
+}
+
+.hud-key-value {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+}
+
+.hud-key-value div {
+  display: grid;
+  gap: var(--sp-2);
+  grid-template-columns: minmax(80px, 0.8fr) minmax(0, 1.2fr);
+}
+
+.hud-key-value dt {
+  color: var(--text-mid);
+  font-size: var(--fs-xs);
+}
+
+.hud-key-value dd {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ── RadialMeter — 동심 레이더 KPI ── */
+.hud-radial {
+  align-items: center;
+  color: var(--hud-state-color);
+  display: grid;
+  justify-items: center;
+  position: relative;
+}
+
+.hud-radial svg {
+  inline-size: min(100%, 168px);
+  overflow: visible;
+}
+
+.hud-radial-rings circle {
+  fill: none;
+  opacity: 0.5;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.hud-radial-ticks line {
+  opacity: 0.4;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1;
+}
+
+.hud-radial-ticks .is-major {
+  opacity: 0.78;
+  stroke-width: 1.8;
+}
+
+.hud-radial-track,
+.hud-radial-fill {
+  fill: none;
+  stroke-linecap: round;
+  stroke-width: 8;
+  transform: rotate(-90deg);
+  transform-origin: center;
+}
+
+.hud-radial-track {
+  stroke: color-mix(in srgb, var(--surface-2) 78%, var(--hud-state-color));
+}
+
+.hud-radial-fill {
+  filter: drop-shadow(0 0 6px currentColor);
+  stroke: currentColor;
+  transition: stroke-dashoffset var(--dur-slow) var(--ease);
+}
+
+.hud-radial-readout {
+  align-items: baseline;
+  display: flex;
+  font-family: var(--font-mono);
+  gap: var(--sp-1);
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  position: absolute;
+  transform: translate(-50%, -62%);
+}
+
+.hud-radial-value {
+  color: var(--hud-state-color);
+  font-size: var(--fs-2xl);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hud-radial-readout small {
+  color: var(--text-mid);
+  font-size: var(--fs-xs);
+}
+
+.hud-radial-label {
+  margin-block-start: calc(-1 * var(--sp-2));
+  text-align: center;
+}
+
+/* ── Sparkline — 인라인 미니 트렌드 ── */
+.hud-sparkline {
+  color: var(--hud-state-color);
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.hud-sparkline svg {
+  block-size: 28px;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.hud-sparkline-line {
+  fill: none;
+  filter: drop-shadow(0 0 3px currentColor);
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ── RadialBreakdown — 허브 둘레 카테고리 스포크 ── */
+.hud-radial-breakdown {
+  color: var(--hud-state-color);
+  display: grid;
+  gap: var(--sp-2);
+  justify-items: center;
+}
+
+.hud-radial-breakdown svg {
+  inline-size: min(100%, 260px);
+  overflow: visible;
+}
+
+.hud-rb-rings circle {
+  fill: none;
+  opacity: 0.5;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.hud-rb-spoke line {
+  opacity: 0.85;
+  stroke: var(--hud-state-color);
+  stroke-linecap: round;
+  stroke-width: 2.4;
+}
+
+.hud-rb-spoke circle {
+  fill: var(--hud-state-color);
+  filter: drop-shadow(0 0 4px var(--hud-state-color));
+}
+
+.hud-rb-label {
+  fill: var(--text-mid);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.hud-rb-value {
+  fill: var(--text);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.hud-rb-core {
+  fill: color-mix(in srgb, var(--bg) 82%, var(--hud-state-color));
+  stroke: var(--hud-state-color);
+  stroke-width: 1;
+}
+
+.hud-rb-total {
+  dominant-baseline: middle;
+  fill: var(--text);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.hud-rb-unit {
+  dominant-baseline: middle;
+  fill: var(--text-mid);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  text-anchor: middle;
+}
+
+@keyframes hudPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-steps .is-active .hud-step-dot {
+    animation: none;
+  }
+
+  .hud-gauge-fill,
+  .hud-radial-fill,
+  .hud-progress progress::-webkit-progress-value {
+    transition: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .hud-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hud-panel--span-3 {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .hud-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hud-panel--span-2,
+  .hud-panel--span-3 {
+    grid-column: span 1;
+  }
+
+  .hud-pie-body {
+    grid-template-columns: 1fr;
+  }
+}

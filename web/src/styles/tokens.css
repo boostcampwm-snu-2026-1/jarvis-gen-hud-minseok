@@ -1,0 +1,94 @@
+:root {
+  /* surface */
+  --bg: #060a0f;
+  --surface: #0c1620;
+  --surface-2: #122231;
+  --line: rgba(34, 211, 238, 0.18);
+  --grid: rgba(34, 211, 238, 0.08);
+
+  /* holographic accent */
+  --accent: #22d3ee;
+  --accent-strong: #38e0f0;
+  --accent-glow: rgba(34, 211, 238, 0.35);
+
+  /* text */
+  --text: #e6f6fb;
+  --text-mid: #9fc4cf;
+  --text-dim: #5f7c88;
+
+  /* state axis */
+  --state-stable: #3b82f6;
+  --state-info: #22d3ee;
+  --state-caution: #f59e0b;
+  --state-critical: #ef4444;
+  --state-stable-bg: rgba(59, 130, 246, 0.14);
+  --state-info-bg: rgba(34, 211, 238, 0.12);
+  --state-caution-bg: rgba(245, 158, 11, 0.14);
+  --state-critical-bg: rgba(239, 68, 68, 0.14);
+
+  /* neutral series axis: distinguishes data series without state semantics */
+  --series-0: #22d3ee;
+  --series-1: #3b82f6;
+  --series-2: #67e8f9;
+  --series-3: #818cf8;
+  --series-4: #2dd4bf;
+
+  /* ── NON-semantic richness palettes ──
+     상태색(--state-*)은 의미 전용. 풍부함(heat·다중 시리즈)은 여기서만 쓴다.
+     빨강 막대='값 큼'은 --seq-*이지 --state-critical이 아니다. */
+
+  /* sequential / heat ramp: 크기·강도(쿨→웜). heat 바·밀도 색 전용. */
+  --seq-0: #22d3ee; /* low / cool */
+  --seq-1: #5eead4;
+  --seq-2: #a3e635;
+  --seq-3: #fbbf24;
+  --seq-4: #fb7185; /* high / warm (≠ --state-critical) */
+
+  /* categorical: 다중 시리즈/카테고리 구분(청록 외 인디고·민트·바이올렛·앰버 등). */
+  --cat-0: #22d3ee;
+  --cat-1: #818cf8;
+  --cat-2: #34d399;
+  --cat-3: #c084fc;
+  --cat-4: #fbbf24;
+  --cat-5: #f472b6;
+  --cat-6: #38bdf8;
+  --cat-7: #a3e635;
+
+  /* typography */
+  --font-ui:
+    -apple-system, 'Segoe UI', 'Apple SD Gothic Neo', 'Malgun Gothic',
+    sans-serif;
+  --font-mono:
+    'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  --fs-xs: 0.72rem;
+  --fs-sm: 0.82rem;
+  --fs-md: 0.95rem;
+  --fs-lg: 1.15rem;
+  --fs-xl: 1.6rem;
+  --fs-2xl: 2.4rem;
+  --lh: 1.5;
+
+  /* spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* radius */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-pill: 999px;
+
+  /* elevation */
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  --glow: 0 0 0 1px var(--line), 0 0 24px -8px var(--accent-glow);
+
+  /* motion */
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 360ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}

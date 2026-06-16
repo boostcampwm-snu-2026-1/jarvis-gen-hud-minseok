@@ -15,11 +15,11 @@
 | 4 | 반응형 React 앱 셸 + Hermes 토큰 스트리밍 대화 | 기능 | M1 | `feature` |
 | 5 | 레이아웃: 대화 패널 + HUD 캔버스 분리 | 컴포넌트 | M1 | `feature` |
 | 6 | 자비스 디자인 토큰 정의(청록/검정/파랑↔빨강) | 컴포넌트 | M2 | `design` |
-| 7 | HUD 프리미티브: ProgressBar/Gauge/StatusPanel/ChartWrap/Alert | 컴포넌트 | M2 | `feature` |
+| 7 | HUD 프리미티브: ProgressBar/Gauge/StatusPanel/Chart/Alert | 컴포넌트 | M2 | `feature` |
 | 8 | 제약 JSX 생성→샌드박스 렌더→자기치유 루프 | 기능 | M3 | `core` |
 | 9 | 보편 후크: "빌드 상태 보여줘" → 빌드 진행 HUD | 기능 | M3 | `core` |
 | 10 | 본 적 없는 작업의 HUD 발명(프롬프트 일반화) | 기능 | M4 | `core` |
-| 11 | 음성 파이프라인 통합(faster-whisper→Qwen→ElevenLabs) | 기능 | M5 | `feature` |
+| 11 | 음성 파이프라인 통합(faster-whisper→Hermes /v1→ElevenLabs, 오케스트레이터) | 기능 | M5 | `feature` |
 | 12 | 데모 2비트 스크립트 + 백업 녹화 | 기능 | M6 | `demo` |
 
 > 1주차엔 이 중 1~4번 정도를 우선 Issue로 등록하고, 나머지는 주차 진행하며 추가.
@@ -84,7 +84,7 @@ for L in spike infra feature design core demo; do gh label create "$L" 2>/dev/nu
 
 gh issue create --title "[M0] 음성 스모크 테스트로 STT→LLM→TTS 지연 측정" \
   --label spike \
-  --body "voice_smoke_test.py로 faster-whisper→LLM→ElevenLabs 1회 왕복 + 단계별 지연 측정. localhost와 원격 노트북 둘 다. **Exit:** 합산 지연 숫자 확보, 0.5s까지 거리 파악."
+  --body "음성 스파이크 스크립트로 faster-whisper→LLM→ElevenLabs 1회 왕복 + 단계별 지연 측정. localhost와 원격 노트북 둘 다. **Exit:** 합산 지연 숫자 확보, 0.5s까지 거리 파악."
 
 gh issue create --title "[M0] react-live 샌드박스에 하드코딩 JSX 1개 렌더" \
   --label spike \
