@@ -133,6 +133,10 @@ function ChatApp() {
     setStatusDetail(undefined);
     // 새 턴의 도구 진행 타임라인을 초기화(이전 턴 잔상 방지).
     activityRef.current = [];
+    // 새 작업 시작: 이전 HUD(완성·라이브 포함)를 즉시 비우고 진행 표시로 교체.
+    // 라이브 구독을 먼저 해제해 이전 소스가 새 작업 HUD 위로 갱신하지 않게 한다.
+    unsubscribeLiveHud();
+    setHud({ phase: 'generating', message: '작업 준비 중', activity: [] });
 
     const controller = new AbortController();
     abortRef.current = controller;

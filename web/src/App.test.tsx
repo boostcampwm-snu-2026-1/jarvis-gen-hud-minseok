@@ -12,13 +12,15 @@ type MainOpts = { signal: AbortSignal; onToolEvent?: (event: ToolEvt) => void };
 // 즉답(usher)·본 답변(main) 스트림을 테스트마다 갈아끼울 수 있게 hoist된 상태로 둔다.
 // 나머지 hermes export(createConversationName 등)는 원본을 유지해 hudGenerator가
 // 정상 평가되도록 한다.
-const { streams } = vi.hoisted(() => ({
+const { streams, live } = vi.hoisted(() => ({
   streams: {
     usher: null as ((input: string, opts: { signal: AbortSignal }) => AsyncGenerator<string>) | null,
     main: null as
       | ((input: string, conv: string | null, opts: MainOpts) => AsyncGenerator<string>)
       | null,
   },
+  // 라이브 HUD 구독/해제를 관찰해 "새 작업 시 이전 구독 해제"를 검증한다.
+  live: { subscribed: [] as unknown[], unsubscribed: [] as string[] },
 }));
 
 vi.mock('./lib/hermes', async (importOriginal) => {
@@ -39,10 +41,13 @@ vi.mock('./lib/liveHud', async (importOriginal) => {
   return {
     ...actual,
     LiveHudClient: class {
-      subscribe() {
+      subscribe(spec: unknown) {
+        live.subscribed.push(spec);
         return 'sub';
       }
-      unsubscribe() {}
+      unsubscribe(id: string) {
+        live.unsubscribed.push(id);
+      }
       close() {}
     },
   };
@@ -74,6 +79,8 @@ describe('App usher/main 오케스트레이션', () => {
     window.localStorage.clear();
     streams.usher = null;
     streams.main = null;
+    live.subscribed = [];
+    live.unsubscribed = [];
   });
 
   afterEach(() => {
@@ -251,5 +258,46 @@ describe('App usher/main 오케스트레이션', () => {
     // 진행(generating) 표시가 남지 않고 빈 캔버스(idle)로 정리된다.
     expect(screen.queryByTestId('hud-progress')).toBeNull();
     expect(screen.getByTestId('hud-empty')).toBeInTheDocument();
+  });
+
+  it('새 작업을 시작하면 기존 라이브 HUD를 즉시 비우고 구독 해제 후 진행 표시로 교체한다', async () => {
+    // 이전 세션에서 렌더된 라이브 HUD를 복원한다(localStorage).
+    window.localStorage.setItem(
+      'jarvis.hud',
+      JSON.stringify({
+        jsx: '<Panel title="GPU" state="info"><Stat label="temp" value={data.n} state="info" /></Panel>',
+        design: null,
+        live: { source: 'gpu', intervalMs: 1000 },
+        data: { n: 42 },
+        repairCount: 0,
+      }),
+    );
+
+    // usher·main 모두 매달려 있게 두어 턴 시작 직후의 진행 표시를 관찰한다.
+    streams.usher = async function* (_input, { signal }) {
+      await untilAbort(signal);
+      yield '';
+    };
+    streams.main = async function* (_input, _conv, { signal }) {
+      await untilAbort(signal);
+      yield '';
+    };
+
+    render(<App />);
+
+    // 복원된 HUD가 떠 있고(렌더 iframe) 라이브 구독이 걸려 있다.
+    expect(await screen.findByTitle('HUD frame')).toBeInTheDocument();
+    expect(live.subscribed).toHaveLength(1);
+
+    send('새 작업 시작');
+
+    // 새 작업 즉시: 렌더된 HUD가 사라지고 진행 표시(skeleton)로 교체된다.
+    await waitFor(() =>
+      expect(screen.getByTestId('hud-skeleton')).toBeInTheDocument(),
+    );
+    expect(screen.queryByTitle('HUD frame')).toBeNull();
+    expect(screen.getByText('작업 준비 중')).toBeInTheDocument();
+    // 이전 라이브 구독은 해제됐다(이전 소스가 새 작업 위로 갱신하지 않게).
+    expect(live.unsubscribed).toContain('sub');
   });
 });
