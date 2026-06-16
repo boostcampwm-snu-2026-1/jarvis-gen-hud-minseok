@@ -67,6 +67,11 @@ export default defineConfig(({ mode }) => {
           target: env.LIVE_HUD_TARGET || 'ws://127.0.0.1:8765',
           ws: true,
         },
+        // 오케스트레이터 descriptor 목록(HTTP). 같은 8765 포트, http 타깃.
+        '/sources': {
+          target: env.LIVE_HUD_HTTP_TARGET || 'http://127.0.0.1:8765',
+          changeOrigin: true,
+        },
       },
     },
     test: {
