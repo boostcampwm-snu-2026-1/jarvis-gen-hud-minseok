@@ -34,10 +34,9 @@
 │   ├── tasks.md               # 도출 Task + GitHub 셋업 명령
 │   └── 회고록-1주차.md
 ├── deploy/                    # 배포 (compose, Caddy, env)
-├── web/                       # React 앱 (Vite + TS)
-├── orchestrator/              # 라이브 HUD 소스 오케스트레이터 (Python)
 ├── AGENTS.md                  # 코딩 에이전트 기준 문서 (canonical)
-└── CLAUDE.md                  # Claude Code 진입점 (@AGENTS.md 참조)
+├── CLAUDE.md                  # Claude Code 진입점 (@AGENTS.md 참조)
+└── (앱 소스: web/ — 2주차부터)
 ```
 
 ## 개발 관리 규칙
